@@ -42,9 +42,14 @@ export const recipesService = {
 
   async update(
     id: string,
-    data: Partial<Omit<Recipe, 'id' | 'created' | 'updated'>>,
+    data: Partial<Omit<Recipe, 'id' | 'created' | 'updated'>> | FormData,
   ): Promise<Recipe> {
     return await pb.collection('recipes').update<Recipe>(id, data)
+  },
+
+  getPhotoUrl(recipe: { id: string }, filename: string, thumb?: string): string {
+    if (!filename) return ''
+    return pb.files.getUrl(recipe as never, filename, thumb ? { thumb } : undefined)
   },
 
   async delete(id: string): Promise<boolean> {

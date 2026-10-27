@@ -32,6 +32,8 @@ export interface Recipe {
   selling_price: number
   labor_cost?: number
   notes?: string
+  photo_1?: string
+  photo_2?: string
   created?: string
   updated?: string
 }
