@@ -3,6 +3,8 @@ import { Recipe, RecipeItem, calculateItemCost } from '@/types/restaurant'
 
 export interface RecipeWithCost extends Recipe {
   items: RecipeItem[]
+  ingredientsCost: number
+  laborCost: number
   totalCost: number
   costPerPortion: number
   marginPercent: number
@@ -79,15 +81,18 @@ export const recipesService = {
    * Calcula o custo total e indicadores financeiros de uma receita a partir de seus itens
    */
   computeCosts(recipe: Recipe, items: RecipeItem[]): RecipeWithCost {
-    let totalCost = 0
+    let ingredientsCost = 0
 
     for (const item of items) {
       const ing = item.expand?.ingredient_id
       if (ing) {
         const itemCost = calculateItemCost(item.quantity, item.unit, ing.price, ing.unit)
-        totalCost += itemCost
+        ingredientsCost += itemCost
       }
     }
+
+    const laborCost = recipe.labor_cost && recipe.labor_cost > 0 ? recipe.labor_cost : 0
+    const totalCost = ingredientsCost + laborCost
 
     const portions = recipe.yield_portions && recipe.yield_portions > 0 ? recipe.yield_portions : 1
     const costPerPortion = totalCost / portions
@@ -98,6 +103,8 @@ export const recipesService = {
     return {
       ...recipe,
       items,
+      ingredientsCost,
+      laborCost,
       totalCost,
       costPerPortion,
       profitPerPortion,

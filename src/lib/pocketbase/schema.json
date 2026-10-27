@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-27T19:03:30.207Z",
+  "generatedAt": "2026-10-27T19:36:21.136Z",
   "collections": [
     {
       "name": "users",
@@ -149,6 +149,12 @@
           "system": false
         },
         {
+          "name": "labor_cost",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
           "name": "notes",
           "type": "text",
           "required": false,
@@ -167,6 +173,12 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "labor_cost",
+          "type": "number",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [

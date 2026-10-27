@@ -76,6 +76,7 @@ export default function FichasTecnicas() {
     type: 'prato' as RecipeType,
     yield_portions: '1',
     selling_price: '',
+    labor_cost: '',
     notes: '',
   })
 
@@ -128,6 +129,7 @@ export default function FichasTecnicas() {
       type: 'prato',
       yield_portions: '1',
       selling_price: '',
+      labor_cost: '',
       notes: '',
     })
     setIsModalOpen(true)
@@ -140,6 +142,7 @@ export default function FichasTecnicas() {
       type: recipe.type,
       yield_portions: recipe.yield_portions ? recipe.yield_portions.toString() : '1',
       selling_price: recipe.selling_price ? recipe.selling_price.toString() : '',
+      labor_cost: recipe.labor_cost ? recipe.labor_cost.toString() : '',
       notes: recipe.notes || '',
     })
     setIsModalOpen(true)
@@ -160,6 +163,7 @@ export default function FichasTecnicas() {
     const priceNum = formData.selling_price
       ? parseFloat(formData.selling_price.replace(',', '.'))
       : 0
+    const laborNum = formData.labor_cost ? parseFloat(formData.labor_cost.replace(',', '.')) : 0
 
     try {
       setSaving(true)
@@ -169,6 +173,7 @@ export default function FichasTecnicas() {
           type: formData.type,
           yield_portions: portionsNum,
           selling_price: priceNum,
+          labor_cost: laborNum >= 0 ? laborNum : 0,
           notes: formData.notes.trim() || undefined,
         })
         toast({ title: 'Ficha técnica atualizada com sucesso!' })
@@ -180,6 +185,7 @@ export default function FichasTecnicas() {
           type: formData.type,
           yield_portions: portionsNum,
           selling_price: priceNum,
+          labor_cost: laborNum >= 0 ? laborNum : 0,
           notes: formData.notes.trim() || undefined,
         })
         toast({ title: 'Ficha técnica criada! Agora adicione os insumos.' })
@@ -434,9 +440,14 @@ export default function FichasTecnicas() {
                     </TableCell>
 
                     <TableCell className="text-right font-semibold text-slate-800">
-                      {formatCurrency(recipe.costPerPortion)}
+                      <div>{formatCurrency(recipe.costPerPortion)}</div>
+                      {recipe.labor_cost !== undefined && recipe.labor_cost > 0 && (
+                        <span className="text-[10px] text-amber-700 bg-amber-50 px-1 py-0.5 rounded border border-amber-200">
+                          inclui M.O.{' '}
+                          {formatCurrency(recipe.labor_cost / (recipe.yield_portions || 1))}
+                        </span>
+                      )}
                     </TableCell>
-
                     <TableCell className="text-right font-semibold text-slate-900">
                       {recipe.selling_price > 0 ? (
                         formatCurrency(recipe.selling_price)
@@ -578,6 +589,26 @@ export default function FichasTecnicas() {
                 </div>
                 <p className="text-xs text-slate-400">
                   Pode ser ajustado ou recalculado posteriormente na tela de Precificação.
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="r-labor">Custo de Mão de Obra da Batelada (R$)</Label>
+                <div className="relative">
+                  <span className="absolute left-3 top-2.5 text-slate-400 text-sm">R$</span>
+                  <Input
+                    id="r-labor"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="0,00"
+                    className="pl-9"
+                    value={formData.labor_cost}
+                    onChange={(e) => setFormData({ ...formData, labor_cost: e.target.value })}
+                  />
+                </div>
+                <p className="text-xs text-slate-400">
+                  Tempo de preparo × custo/minuto da equipe. Somado aos insumos para o custo/porção.
                 </p>
               </div>
 

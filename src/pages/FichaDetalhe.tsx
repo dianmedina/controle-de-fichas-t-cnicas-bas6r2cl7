@@ -77,6 +77,7 @@ export default function FichaDetalhe() {
     type: 'prato' as 'prato' | 'guarnicao',
     yield_portions: '1',
     selling_price: '',
+    labor_cost: '',
     notes: '',
   })
   const [savingHeader, setSavingHeader] = useState(false)
@@ -111,6 +112,7 @@ export default function FichaDetalhe() {
         type: r.type,
         yield_portions: r.yield_portions ? r.yield_portions.toString() : '1',
         selling_price: r.selling_price ? r.selling_price.toString() : '',
+        labor_cost: r.labor_cost ? r.labor_cost.toString() : '',
         notes: r.notes || '',
       })
     } catch (error) {
@@ -260,6 +262,7 @@ export default function FichaDetalhe() {
     const priceNum = headerData.selling_price
       ? parseFloat(headerData.selling_price.replace(',', '.'))
       : 0
+    const laborNum = headerData.labor_cost ? parseFloat(headerData.labor_cost.replace(',', '.')) : 0
 
     try {
       setSavingHeader(true)
@@ -268,6 +271,7 @@ export default function FichaDetalhe() {
         type: headerData.type,
         yield_portions: portionsNum,
         selling_price: priceNum,
+        labor_cost: laborNum >= 0 ? laborNum : 0,
         notes: headerData.notes.trim() || undefined,
       })
       setRecipe(updated)
@@ -402,6 +406,26 @@ export default function FichaDetalhe() {
               </div>
 
               <div className="space-y-1.5">
+                <Label htmlFor="h-labor">Custo de Mão de Obra da Batelada (R$)</Label>
+                <div className="relative">
+                  <span className="absolute left-3 top-2.5 text-slate-400 text-sm">R$</span>
+                  <Input
+                    id="h-labor"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    className="pl-9"
+                    placeholder="0,00"
+                    value={headerData.labor_cost}
+                    onChange={(e) => setHeaderData({ ...headerData, labor_cost: e.target.value })}
+                  />
+                </div>
+                <p className="text-xs text-slate-500">
+                  Tempo de preparo × custo/minuto da equipe. É somado ao custo dos insumos.
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
                 <Label htmlFor="h-notes">Modo de Preparo e Observações</Label>
                 <Textarea
                   id="h-notes"
@@ -474,6 +498,17 @@ export default function FichaDetalhe() {
                 )}
               </p>
             </div>
+            {recipe.labor_cost !== undefined && recipe.labor_cost > 0 && (
+              <>
+                <div className="w-px h-8 bg-slate-200" />
+                <div>
+                  <p className="text-xs uppercase font-semibold text-slate-400">Mão de Obra</p>
+                  <p className="text-xl font-bold text-slate-800">
+                    {formatCurrency(recipe.labor_cost)}
+                  </p>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -491,7 +526,14 @@ export default function FichaDetalhe() {
             </CardTitle>
           </CardHeader>
           <CardContent className="p-4 pt-1 text-xs text-slate-500">
-            Soma exata de todos os ingredientes utilizados
+            {costSummary.laborCost > 0 ? (
+              <span>
+                Insumos ({formatCurrency(costSummary.ingredientsCost)}) + M.O. (
+                {formatCurrency(costSummary.laborCost)})
+              </span>
+            ) : (
+              'Soma dos ingredientes utilizados'
+            )}
           </CardContent>
         </Card>
 

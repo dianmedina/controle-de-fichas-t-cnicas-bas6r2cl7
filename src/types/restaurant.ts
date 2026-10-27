@@ -30,6 +30,7 @@ export interface Recipe {
   type: RecipeType
   yield_portions: number
   selling_price: number
+  labor_cost?: number
   notes?: string
   created?: string
   updated?: string
