@@ -1,5 +1,15 @@
 export type MeasurementUnit = 'kg' | 'g' | 'L' | 'mL' | 'unidade'
 
+export interface IngredientPriceHistory {
+  id: string
+  ingredient_id: string
+  price: number
+  date: string // YYYY-MM-DD
+  notes?: string
+  created?: string
+  updated?: string
+}
+
 export interface Ingredient {
   id: string
   name: string

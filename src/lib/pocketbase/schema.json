@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-27T18:43:23.892Z",
+  "generatedAt": "2026-10-27T19:03:30.207Z",
   "collections": [
     {
       "name": "users",
@@ -280,6 +280,62 @@
       "indexes": [
         "CREATE INDEX idx_sales_date ON sales (date)",
         "CREATE INDEX idx_sales_recipe ON sales (recipe_id)"
+      ]
+    },
+    {
+      "name": "ingredient_price_history",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "ingredient_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "ingredients"
+        },
+        {
+          "name": "price",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "date",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "notes",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_price_history_ingredient ON ingredient_price_history (ingredient_id)",
+        "CREATE INDEX idx_price_history_date ON ingredient_price_history (date)"
       ]
     }
   ]

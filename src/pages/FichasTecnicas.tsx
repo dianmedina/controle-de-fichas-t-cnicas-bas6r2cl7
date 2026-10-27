@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { recipesService, RecipeWithCost } from '@/services/recipes'
-import { Recipe, RecipeType, formatCurrency, formatPercent } from '@/types/restaurant'
+import { ingredientsService } from '@/services/ingredients'
+import { Recipe, Ingredient, RecipeType, formatCurrency, formatPercent } from '@/types/restaurant'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -32,6 +33,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { useToast } from '@/hooks/use-toast'
+import { ImportRecipesDialog } from '@/components/ImportRecipesDialog'
 import {
   Plus,
   Search,
@@ -44,12 +46,15 @@ import {
   CookingPot,
   ArrowRight,
   TrendingUp,
+  FileSpreadsheet,
 } from 'lucide-react'
 
 export default function FichasTecnicas() {
   const navigate = useNavigate()
   const { toast } = useToast()
   const [recipesWithCost, setRecipesWithCost] = useState<RecipeWithCost[]>([])
+  const [rawRecipes, setRawRecipes] = useState<Recipe[]>([])
+  const [allIngredients, setAllIngredients] = useState<Ingredient[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [typeFilter, setTypeFilter] = useState<'all' | RecipeType>('all')
@@ -58,6 +63,9 @@ export default function FichasTecnicas() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingRecipe, setEditingRecipe] = useState<Recipe | null>(null)
   const [saving, setSaving] = useState(false)
+
+  // Modal Importação Excel
+  const [isImportOpen, setIsImportOpen] = useState(false)
 
   // Modal Exclusão
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
@@ -74,10 +82,14 @@ export default function FichasTecnicas() {
   const loadData = async () => {
     try {
       setLoading(true)
-      const [allRecipes, allItems] = await Promise.all([
+      const [allRecipes, allItems, ings] = await Promise.all([
         recipesService.getAll(),
         recipesService.getAllRecipeItems(),
+        ingredientsService.getAll(),
       ])
+
+      setRawRecipes(allRecipes)
+      setAllIngredients(ings)
 
       const enriched = allRecipes.map((r) => {
         const items = allItems.filter((i) => i.recipe_id === r.id)
@@ -219,13 +231,23 @@ export default function FichasTecnicas() {
             Gerenciamento e cálculo de custo operacional de pratos principais e guarnições.
           </p>
         </div>
-        <Button
-          onClick={handleOpenCreate}
-          className="bg-amber-600 hover:bg-amber-700 text-white shadow-sm flex items-center gap-1.5 self-start sm:self-auto"
-        >
-          <Plus className="h-4 w-4" />
-          Nova Ficha Técnica
-        </Button>
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <Button
+            variant="outline"
+            onClick={() => setIsImportOpen(true)}
+            className="border-orange-300 text-orange-900 hover:bg-orange-50 shadow-xs flex items-center gap-1.5"
+          >
+            <FileSpreadsheet className="h-4 w-4 text-orange-700" />
+            Importar Fichas (.xlsx)
+          </Button>
+          <Button
+            onClick={handleOpenCreate}
+            className="bg-amber-600 hover:bg-amber-700 text-white shadow-sm flex items-center gap-1.5"
+          >
+            <Plus className="h-4 w-4" />
+            Nova Ficha Técnica
+          </Button>
+        </div>
       </div>
 
       {/* Cards de Métricas */}
@@ -597,10 +619,10 @@ export default function FichasTecnicas() {
       <Dialog open={!!deleteConfirmId} onOpenChange={() => setDeleteConfirmId(null)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Confirmar Exclusão da Ficha</DialogTitle>
+            <DialogTitle>Confirmar Exclusão</DialogTitle>
             <DialogDescription>
-              Tem certeza que deseja excluir esta ficha técnica? Todos os ingredientes associados a
-              esta ficha também serão desvinculados.
+              Tem certeza que deseja excluir esta ficha técnica? Essa ação removerá também a
+              composição de insumos cadastrada.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2 sm:gap-0">
@@ -614,6 +636,15 @@ export default function FichasTecnicas() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Modal de Importação Excel de Fichas Técnicas */}
+      <ImportRecipesDialog
+        open={isImportOpen}
+        onOpenChange={setIsImportOpen}
+        existingRecipes={rawRecipes}
+        existingIngredients={allIngredients}
+        onSuccess={loadData}
+      />
     </div>
   )
 }

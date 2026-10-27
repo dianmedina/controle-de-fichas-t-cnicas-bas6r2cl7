@@ -1,6 +1,11 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import { ingredientsService } from '@/services/ingredients'
-import { Ingredient, MeasurementUnit, formatCurrency } from '@/types/restaurant'
+import {
+  Ingredient,
+  IngredientPriceHistory,
+  MeasurementUnit,
+  formatCurrency,
+} from '@/types/restaurant'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -30,6 +35,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { useToast } from '@/hooks/use-toast'
+import { ImportIngredientsDialog } from '@/components/ImportIngredientsDialog'
 import {
   Plus,
   Search,
@@ -40,6 +46,11 @@ import {
   Filter,
   DollarSign,
   Package,
+  History,
+  TrendingUp,
+  TrendingDown,
+  Minus,
+  FileSpreadsheet,
 } from 'lucide-react'
 
 const UNITS: MeasurementUnit[] = ['kg', 'g', 'L', 'mL', 'unidade']
@@ -55,6 +66,13 @@ export default function Insumos() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingIngredient, setEditingIngredient] = useState<Ingredient | null>(null)
   const [saving, setSaving] = useState(false)
+
+  // Estado do Modal de Importação Excel
+  const [isImportOpen, setIsImportOpen] = useState(false)
+
+  // Estado do Histórico de Preços no Modal
+  const [priceHistory, setPriceHistory] = useState<IngredientPriceHistory[]>([])
+  const [loadingHistory, setLoadingHistory] = useState(false)
 
   // Estado do Modal de Confirmação de Exclusão
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
@@ -111,6 +129,7 @@ export default function Insumos() {
 
   const handleOpenCreate = () => {
     setEditingIngredient(null)
+    setPriceHistory([])
     setFormData({
       name: '',
       price: '',
@@ -122,8 +141,9 @@ export default function Insumos() {
     setIsModalOpen(true)
   }
 
-  const handleOpenEdit = (ing: Ingredient) => {
+  const handleOpenEdit = async (ing: Ingredient) => {
     setEditingIngredient(ing)
+    setPriceHistory([])
     setFormData({
       name: ing.name,
       price: ing.price.toString(),
@@ -134,6 +154,16 @@ export default function Insumos() {
         ing.min_stock !== undefined && ing.min_stock !== null ? ing.min_stock.toString() : '',
     })
     setIsModalOpen(true)
+
+    try {
+      setLoadingHistory(true)
+      const hist = await ingredientsService.getPriceHistory(ing.id)
+      setPriceHistory(hist)
+    } catch (err) {
+      console.error('Erro ao buscar histórico de preços:', err)
+    } finally {
+      setLoadingHistory(false)
+    }
   }
 
   const handleSave = async (e: React.FormEvent) => {
@@ -232,13 +262,23 @@ export default function Insumos() {
             fichas técnicas.
           </p>
         </div>
-        <Button
-          onClick={handleOpenCreate}
-          className="bg-amber-600 hover:bg-amber-700 text-white shadow-sm flex items-center gap-1.5 self-start sm:self-auto"
-        >
-          <Plus className="h-4 w-4" />
-          Novo Insumo
-        </Button>
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <Button
+            variant="outline"
+            onClick={() => setIsImportOpen(true)}
+            className="border-amber-300 text-amber-900 hover:bg-amber-50 shadow-xs flex items-center gap-1.5"
+          >
+            <FileSpreadsheet className="h-4 w-4 text-amber-700" />
+            Importar Insumos (.xlsx)
+          </Button>
+          <Button
+            onClick={handleOpenCreate}
+            className="bg-amber-600 hover:bg-amber-700 text-white shadow-sm flex items-center gap-1.5"
+          >
+            <Plus className="h-4 w-4" />
+            Novo Insumo
+          </Button>
+        </div>
       </div>
 
       {/* Cards de Resumo */}
@@ -426,18 +466,18 @@ export default function Insumos() {
         )}
       </div>
 
-      {/* Modal de Criação / Edição */}
+      {/* Modal de Criação / Edição com Histórico de Preços */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="sm:max-w-lg">
-          <form onSubmit={handleSave}>
-            <DialogHeader>
+        <DialogContent className="sm:max-w-xl max-h-[92vh] flex flex-col overflow-hidden">
+          <form onSubmit={handleSave} className="flex flex-col flex-1 overflow-hidden">
+            <DialogHeader className="shrink-0">
               <DialogTitle>{editingIngredient ? 'Editar Insumo' : 'Novo Insumo'}</DialogTitle>
               <DialogDescription>
                 Informe os detalhes do insumo e o preço de custo pago na compra.
               </DialogDescription>
             </DialogHeader>
 
-            <div className="space-y-4 py-4">
+            <div className="space-y-4 py-4 overflow-y-auto flex-1 pr-1">
               <div className="space-y-1.5">
                 <Label htmlFor="name">Nome do Insumo *</Label>
                 <Input
@@ -525,9 +565,106 @@ export default function Insumos() {
                   onChange={(e) => setFormData({ ...formData, min_stock: e.target.value })}
                 />
               </div>
+
+              {/* Seção de Histórico de Preços (exibida na edição) */}
+              {editingIngredient && (
+                <div className="pt-2 border-t border-slate-200 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <History className="h-4 w-4 text-amber-700" />
+                      <Label className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                        Histórico de Variação de Preços
+                      </Label>
+                    </div>
+                    {priceHistory.length > 1 && (
+                      <span className="text-[11px] text-slate-500">
+                        {priceHistory.length} registros encontrados
+                      </span>
+                    )}
+                  </div>
+
+                  {loadingHistory ? (
+                    <div className="p-4 text-center text-xs text-slate-400 flex items-center justify-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin text-amber-600" />
+                      Carregando histórico...
+                    </div>
+                  ) : priceHistory.length === 0 ? (
+                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-500 text-center">
+                      Nenhuma alteração anterior registrada para este insumo.
+                    </div>
+                  ) : (
+                    <div className="border border-slate-200 rounded-lg overflow-hidden bg-white max-h-48 overflow-y-auto">
+                      <Table>
+                        <TableHeader className="bg-slate-50">
+                          <TableRow className="h-8">
+                            <TableHead className="text-[11px] h-8 font-semibold">Data</TableHead>
+                            <TableHead className="text-[11px] h-8 font-semibold text-right">
+                              Preço
+                            </TableHead>
+                            <TableHead className="text-[11px] h-8 font-semibold text-center">
+                              Variação
+                            </TableHead>
+                            <TableHead className="text-[11px] h-8 font-semibold">Motivo</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {priceHistory.map((item, idx) => {
+                            const nextOlderItem = priceHistory[idx + 1]
+                            let diff: number | null = null
+                            if (nextOlderItem) {
+                              diff = item.price - nextOlderItem.price
+                            }
+
+                            return (
+                              <TableRow key={item.id} className="h-8 hover:bg-slate-50/50">
+                                <TableCell className="text-xs font-mono py-1.5">
+                                  {item.date
+                                    ? item.date.split('-').reverse().join('/')
+                                    : (item.created || '')
+                                        .slice(0, 10)
+                                        .split('-')
+                                        .reverse()
+                                        .join('/')}
+                                </TableCell>
+                                <TableCell className="text-xs text-right font-bold text-slate-900 py-1.5">
+                                  {formatCurrency(item.price)}
+                                </TableCell>
+                                <TableCell className="text-center py-1.5">
+                                  {diff === null ? (
+                                    <span className="text-[11px] text-slate-400 font-mono">
+                                      inicial
+                                    </span>
+                                  ) : Math.abs(diff) < 0.001 ? (
+                                    <span className="inline-flex items-center text-[11px] text-slate-500">
+                                      <Minus className="h-3 w-3 mr-0.5" /> 0%
+                                    </span>
+                                  ) : diff > 0 ? (
+                                    <span className="inline-flex items-center text-[11px] font-semibold text-red-600 bg-red-50 px-1.5 py-0.5 rounded border border-red-200">
+                                      <TrendingUp className="h-3 w-3 mr-0.5" />+
+                                      {formatCurrency(diff)}
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                                      <TrendingDown className="h-3 w-3 mr-0.5" />
+                                      {formatCurrency(diff)}
+                                    </span>
+                                  )}
+                                </TableCell>
+                                <TableCell className="text-[11px] text-slate-500 truncate max-w-[150px] py-1.5">
+                                  {item.notes || '-'}
+                                </TableCell>
+                              </TableRow>
+                            )
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
-            <DialogFooter>
+            <DialogFooter className="shrink-0 pt-3 border-t border-slate-100">
               <Button
                 type="button"
                 variant="outline"
@@ -548,6 +685,14 @@ export default function Insumos() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Modal de Importação Excel de Insumos */}
+      <ImportIngredientsDialog
+        open={isImportOpen}
+        onOpenChange={setIsImportOpen}
+        existingIngredients={ingredients}
+        onSuccess={loadIngredients}
+      />
 
       {/* Modal Confirmação de Exclusão */}
       <Dialog open={!!deleteConfirmId} onOpenChange={() => setDeleteConfirmId(null)}>
