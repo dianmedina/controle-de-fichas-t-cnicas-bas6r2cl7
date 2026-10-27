@@ -153,12 +153,12 @@ export default function Index() {
               Gerenciar Insumos
             </Button>
             <Button
-              onClick={() => navigate('/vendas')}
+              onClick={() => navigate('/vendas-precificacao')}
               variant="outline"
               className="border-amber-300 text-white hover:bg-amber-800/40 text-xs sm:text-sm bg-transparent"
             >
               <TrendingUp className="h-4 w-4 mr-1.5" />
-              Lançar Vendas
+              Vendas & Precificação
             </Button>
           </div>
         </div>
@@ -247,7 +247,7 @@ export default function Index() {
               </CardDescription>
             </div>
             <Link
-              to="/precificacao"
+              to="/vendas-precificacao"
               className="text-xs font-medium text-amber-700 hover:text-amber-800 flex items-center gap-1"
             >
               Ver precificação <ArrowRight className="h-3.5 w-3.5" />
@@ -349,7 +349,7 @@ export default function Index() {
                     abaixo de 40% ou sem preço definido.
                   </p>
                   <Link
-                    to="/precificacao"
+                    to="/vendas-precificacao"
                     className="inline-block mt-1 font-semibold underline text-amber-950"
                   >
                     Ajustar na Precificação →

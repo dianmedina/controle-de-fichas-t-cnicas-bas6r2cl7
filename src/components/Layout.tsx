@@ -27,8 +27,7 @@ export default function Layout() {
     { label: 'Dashboard', path: '/', icon: LayoutDashboard },
     { label: 'Insumos', path: '/insumos', icon: Boxes },
     { label: 'Fichas Técnicas', path: '/fichas', icon: ScrollText },
-    { label: 'Vendas', path: '/vendas', icon: TrendingUp },
-    { label: 'Precificação', path: '/precificacao', icon: DollarSign },
+    { label: 'Vendas & Precificação', path: '/vendas-precificacao', icon: TrendingUp },
     { label: 'Configurações', path: '/configuracoes', icon: Settings },
   ]
 

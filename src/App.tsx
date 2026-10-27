@@ -1,5 +1,5 @@
 /* Main App Component - Handles routing (using react-router-dom), query client and other providers - use this file to add all routes */
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from '@/components/ui/toaster'
 import { Toaster as Sonner } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -11,8 +11,7 @@ import Index from './pages/Index'
 import Insumos from './pages/Insumos'
 import FichasTecnicas from './pages/FichasTecnicas'
 import FichaDetalhe from './pages/FichaDetalhe'
-import Vendas from './pages/Vendas'
-import Precificacao from './pages/Precificacao'
+import VendasPrecificacao from './pages/VendasPrecificacao'
 import Configuracoes from './pages/Configuracoes'
 import Login from './pages/Login'
 import NotFound from './pages/NotFound'
@@ -38,8 +37,11 @@ const App = () => (
             <Route path="/insumos" element={<Insumos />} />
             <Route path="/fichas" element={<FichasTecnicas />} />
             <Route path="/fichas/:id" element={<FichaDetalhe />} />
-            <Route path="/vendas" element={<Vendas />} />
-            <Route path="/precificacao" element={<Precificacao />} />
+            {/* Rota unificada de Vendas & Precificação */}
+            <Route path="/vendas-precificacao" element={<VendasPrecificacao />} />
+            {/* Redirecionamentos para compatibilidade com links antigos */}
+            <Route path="/vendas" element={<Navigate to="/vendas-precificacao" replace />} />
+            <Route path="/precificacao" element={<Navigate to="/vendas-precificacao" replace />} />
             <Route path="/configuracoes" element={<Configuracoes />} />
           </Route>
 
