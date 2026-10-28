@@ -827,8 +827,8 @@ export function ImportRecipesDialog({
                                             </span>
                                           </span>
                                           {hasRed && (
-                                            <span className="block text-[10px] text-emerald-700">
-                                              c/ {ing.reduction_percent}% de redução (efetivo:{' '}
+                                            <span className="block text-[10px] text-amber-700">
+                                              c/ {ing.reduction_percent}% perda (custo utilizável:{' '}
                                               {formatCurrency(effPrice)}/{ing.unit})
                                             </span>
                                           )}
@@ -846,13 +846,13 @@ export function ImportRecipesDialog({
                                       {ing ? (
                                         hasRed ? (
                                           <span
-                                            title={`Base: ${formatCurrency(ing.price)} c/ -${ing.reduction_percent}%`}
+                                            title={`Base: ${formatCurrency(ing.price)} c/ perda ${ing.reduction_percent}%`}
                                           >
-                                            <span className="font-bold text-emerald-800">
+                                            <span className="font-bold text-amber-900">
                                               {formatCurrency(effPrice)}
                                             </span>
-                                            <span className="text-[10px] text-slate-400 block line-through">
-                                              {formatCurrency(ing.price)}
+                                            <span className="text-[10px] text-slate-500 block">
+                                              Base: {formatCurrency(ing.price)}
                                             </span>
                                           </span>
                                         ) : (

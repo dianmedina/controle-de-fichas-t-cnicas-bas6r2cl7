@@ -46,7 +46,7 @@ export const ingredientsService = {
         let note = historyNotes
         if (!note) {
           if (created.reduction_percent && created.reduction_percent > 0) {
-            note = `Preço inicial: R$ ${created.price.toFixed(2)} c/ ${created.reduction_percent}% de redução (efetivo: R$ ${effectivePrice.toFixed(2)})`
+            note = `Preço inicial: R$ ${created.price.toFixed(2)} c/ ${created.reduction_percent}% de perda no preparo (efetivo: R$ ${effectivePrice.toFixed(2)})`
           } else {
             note = 'Preço inicial de cadastro'
           }
@@ -106,9 +106,9 @@ export const ingredientsService = {
           const diffStr = Math.abs(diff).toFixed(2)
 
           if (priceChanged && reductionChanged) {
-            note = `Ajuste base (R$ ${updated.price.toFixed(2)}) e redução (${newRed}%): ${direction} de R$ ${diffStr}`
+            note = `Ajuste base (R$ ${updated.price.toFixed(2)}) e perda (${newRed}%): ${direction} de R$ ${diffStr}`
           } else if (reductionChanged) {
-            note = `Alteração de redução: ${oldRed}% -> ${newRed}% (${direction} de R$ ${diffStr})`
+            note = `Alteração de perda no preparo: ${oldRed}% -> ${newRed}% (${direction} de R$ ${diffStr})`
           } else if (oldEffective !== undefined) {
             note = `Ajuste de preço base: ${direction} de R$ ${diffStr}`
           } else {

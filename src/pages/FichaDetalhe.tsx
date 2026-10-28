@@ -872,8 +872,8 @@ export default function FichaDetalhe() {
                               )}
                             </span>
                             {hasRed && (
-                              <span className="block text-[11px] text-emerald-700 font-medium">
-                                Redução de {ing.reduction_percent}% aplicada
+                              <span className="block text-[11px] text-amber-700 font-medium">
+                                Perda de {ing.reduction_percent}% no preparo
                               </span>
                             )}
                           </div>
@@ -896,12 +896,12 @@ export default function FichaDetalhe() {
                           {ing ? (
                             hasRed ? (
                               <div>
-                                <span className="font-bold text-emerald-800">
+                                <span className="font-bold text-amber-900">
                                   {formatCurrency(effPrice)}
                                 </span>
                                 <span className="text-xs text-slate-400 ml-1">/ {ing.unit}</span>
-                                <span className="block text-[10px] text-slate-400 line-through">
-                                  Base: {formatCurrency(ing.price)}
+                                <span className="block text-[10px] text-slate-500">
+                                  Base: {formatCurrency(ing.price)} (+{ing.reduction_percent}%)
                                 </span>
                               </div>
                             ) : (
@@ -1372,7 +1372,7 @@ export default function FichaDetalhe() {
                       return (
                         <SelectItem key={ing.id} value={ing.id}>
                           {ing.name} ({formatCurrency(eff)} / {ing.unit}
-                          {hasRed ? ` - ${ing.reduction_percent}% red.` : ''})
+                          {hasRed ? ` - perda ${ing.reduction_percent}%` : ''})
                         </SelectItem>
                       )
                     })}

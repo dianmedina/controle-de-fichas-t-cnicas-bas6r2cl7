@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react'
-import { Ingredient, formatCurrency } from '@/types/restaurant'
+import { Ingredient, formatCurrency, getEffectiveIngredientPrice } from '@/types/restaurant'
 import {
   parseExcelIngredientsFile,
   validateIngredientRows,
@@ -175,8 +175,10 @@ export function ImportIngredientsDialog({
           // Insumo já existe: atualiza dados e preço (service alimenta histórico automaticamente)
           const oldEff = row.matchedExisting
             ? formatCurrency(
-                (row.matchedExisting.price || 0) *
-                  (1 - (row.matchedExisting.reduction_percent || 0) / 100),
+                getEffectiveIngredientPrice(
+                  row.matchedExisting.price,
+                  row.matchedExisting.reduction_percent,
+                ),
               )
             : ''
           await ingredientsService.update(
@@ -193,7 +195,7 @@ export function ImportIngredientsDialog({
                   : row.matchedExisting.min_stock,
             },
             row.isPriceChange
-              ? `Importação Excel: Preço efetivo anterior ${oldEff} -> Atual ${formatCurrency(row.effectivePrice)} (base R$ ${row.normalizedPrice}, red ${row.normalizedReductionPercent || 0}%)`
+              ? `Importação Excel: Preço efetivo anterior ${oldEff} -> Atual ${formatCurrency(row.effectivePrice)} (base R$ ${row.normalizedPrice}, perda ${row.normalizedReductionPercent || 0}%)`
               : 'Atualização via planilha Excel',
           )
           updatedCount++
@@ -402,7 +404,9 @@ export function ImportIngredientsDialog({
                     </div>
 
                     <div className="space-y-1">
-                      <Label className="text-xs text-slate-700">Redução (%) (Opcional)</Label>
+                      <Label className="text-xs text-slate-700">
+                        Perda / Redução (%) (Opcional)
+                      </Label>
                       <Select
                         value={columnMapping.reductionCol || 'none'}
                         onValueChange={(val) => handleRemap('reductionCol', val)}
@@ -536,10 +540,10 @@ export function ImportIngredientsDialog({
                           Preço Planilha
                         </TableHead>
                         <TableHead className="text-xs font-semibold text-slate-700 text-center">
-                          Redução
+                          Perda (%)
                         </TableHead>
                         <TableHead className="text-xs font-semibold text-slate-700 text-right">
-                          Preço Efetivo
+                          Preço Efetivo (c/ perda)
                         </TableHead>
                         <TableHead className="text-xs font-semibold text-slate-700">
                           Unidade

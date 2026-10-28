@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-28T00:29:26.710Z",
+  "generatedAt": "2026-10-28T00:39:19.931Z",
   "collections": [
     {
       "name": "users",
@@ -88,12 +88,6 @@
         },
         {
           "name": "min_stock",
-          "type": "number",
-          "required": false,
-          "system": false
-        },
-        {
-          "name": "reduction_percent",
           "type": "number",
           "required": false,
           "system": false

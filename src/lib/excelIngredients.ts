@@ -126,12 +126,20 @@ export async function parseExcelIngredientsFile(
     'unitario',
   ]
   const reductionKeywords = [
+    'perda',
+    '% perda',
+    'perda %',
+    'perda no preparo',
+    'quebra',
+    '% quebra',
+    'quebra %',
     'reducao',
     'redução',
     '% reducao',
     '% redução',
     'reducao %',
     'redução %',
+    'fator de correcao',
     'desconto',
     '% desconto',
     'abatimento',
@@ -248,13 +256,13 @@ export function validateIngredientRows(
       errors.push('Preço é obrigatório')
     }
 
-    // Redução (%)
+    // Redução / Perda no preparo (%)
     let normalizedReductionPercent = 0
     if (rawReduction !== undefined && rawReduction !== null && rawReduction !== '') {
       const cleaned = String(rawReduction).trim().replace('%', '').replace(',', '.')
       const red = parseFloat(cleaned)
-      if (isNaN(red) || red < 0 || red > 100) {
-        errors.push('Redução inválida (deve estar entre 0% e 100%)')
+      if (isNaN(red) || red < 0 || red >= 100) {
+        errors.push('Perda no preparo inválida (deve estar entre 0% e 99,9%)')
       } else {
         normalizedReductionPercent = red
       }

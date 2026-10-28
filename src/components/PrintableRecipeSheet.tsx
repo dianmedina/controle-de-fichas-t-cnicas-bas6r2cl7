@@ -159,7 +159,7 @@ export const PrintableRecipeSheet: React.FC<PrintableRecipeSheetProps> = ({
                   {!hideCosts && (
                     <>
                       <th className="py-1 px-1 text-right">Preço Base</th>
-                      <th className="py-1 px-1 text-right text-amber-900">Preço c/ Redução</th>
+                      <th className="py-1 px-1 text-right text-amber-900">Preço c/ Perda</th>
                       <th className="py-1 px-1.5 text-right">Custo</th>
                     </>
                   )}
@@ -202,11 +202,11 @@ export const PrintableRecipeSheet: React.FC<PrintableRecipeSheetProps> = ({
                             {ing ? (
                               hasRed ? (
                                 <span>
-                                  <span className="font-bold text-emerald-800">
+                                  <span className="font-bold text-amber-900">
                                     {formatCurrency(effPrice)}
                                   </span>
-                                  <span className="text-[8px] text-emerald-700 ml-0.5">
-                                    (-{ing.reduction_percent}%)
+                                  <span className="text-[8px] text-amber-700 ml-0.5">
+                                    (+{ing.reduction_percent}%)
                                   </span>
                                 </span>
                               ) : (
@@ -229,7 +229,7 @@ export const PrintableRecipeSheet: React.FC<PrintableRecipeSheetProps> = ({
                 <tfoot>
                   <tr className="bg-slate-100 border-t-2 border-slate-300 text-[10px] font-bold">
                     <td colSpan={4} className="py-1 px-1.5 uppercase text-slate-700">
-                      Subtotal Insumos (c/ redução):
+                      Subtotal Insumos (c/ perdas aplicadas):
                     </td>
                     <td className="py-1 px-1.5 text-right text-slate-900 font-extrabold">
                       {formatCurrency(recipe.ingredientsCost)}

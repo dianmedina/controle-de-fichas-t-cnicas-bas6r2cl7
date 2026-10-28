@@ -205,10 +205,11 @@ export default function Insumos() {
     let reductionNum: number | undefined
     if (formData.reduction_percent.trim()) {
       const parsedRed = parseFloat(formData.reduction_percent.replace(',', '.'))
-      if (isNaN(parsedRed) || parsedRed < 0 || parsedRed > 100) {
+      if (isNaN(parsedRed) || parsedRed < 0 || parsedRed >= 100) {
         toast({
-          title: 'Redução percentual inválida',
-          description: 'A redução deve ser um valor entre 0 e 100%.',
+          title: 'Perda percentual inválida',
+          description:
+            'A perda no preparo deve ser um valor entre 0% e 99,9% (não pode ser 100% ou mais).',
           variant: 'destructive',
         })
         return
@@ -429,10 +430,10 @@ export default function Insumos() {
                     Preço de Compra
                   </TableHead>
                   <TableHead className="font-semibold text-slate-700 text-center">
-                    Redução (%)
+                    Perda no Preparo (%)
                   </TableHead>
                   <TableHead className="font-semibold text-slate-700 text-right text-amber-900 bg-amber-50/50">
-                    Preço c/ Redução
+                    Custo Utilizável
                   </TableHead>
                   <TableHead className="font-semibold text-slate-700">Unidade Base</TableHead>
                   <TableHead className="font-semibold text-slate-700">Fornecedor</TableHead>
@@ -456,8 +457,9 @@ export default function Insumos() {
                         <div>
                           <span>{ing.name}</span>
                           {hasReduction && (
-                            <span className="block text-[11px] text-emerald-700 font-medium">
-                              Economia de {formatCurrency(ing.price - effectivePrice)} / {ing.unit}
+                            <span className="block text-[11px] text-amber-700 font-medium">
+                              +{formatCurrency(effectivePrice - ing.price)} / {ing.unit} utilizável
+                              (perda de {ing.reduction_percent}%)
                             </span>
                           )}
                         </div>
@@ -470,9 +472,7 @@ export default function Insumos() {
                           {ing.category}
                         </Badge>
                       </TableCell>
-                      <TableCell
-                        className={`text-right text-sm ${hasReduction ? 'text-slate-500 line-through' : 'font-semibold text-slate-900'}`}
-                      >
+                      <TableCell className="text-right text-sm font-medium text-slate-700">
                         {formatCurrency(ing.price)}
                         <span className="text-xs text-slate-400 font-normal ml-1">
                           / {ing.unit}
@@ -480,7 +480,7 @@ export default function Insumos() {
                       </TableCell>
                       <TableCell className="text-center">
                         {hasReduction ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200">
                             {ing.reduction_percent}%
                           </span>
                         ) : (
@@ -489,7 +489,7 @@ export default function Insumos() {
                       </TableCell>
                       <TableCell className="text-right font-bold text-slate-950 bg-amber-50/40">
                         <span
-                          className={hasReduction ? 'text-emerald-700 font-bold' : 'text-slate-900'}
+                          className={hasReduction ? 'text-amber-900 font-bold' : 'text-slate-900'}
                         >
                           {formatCurrency(effectivePrice)}
                         </span>
@@ -590,14 +590,14 @@ export default function Insumos() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label htmlFor="reduction_percent">Redução (%)</Label>
+                  <Label htmlFor="reduction_percent">Redução / Perda no preparo (%)</Label>
                   <div className="relative">
                     <Input
                       id="reduction_percent"
                       type="number"
                       step="0.1"
                       min="0"
-                      max="100"
+                      max="99.9"
                       placeholder="0"
                       className="pr-8"
                       value={formData.reduction_percent}
@@ -609,6 +609,10 @@ export default function Insumos() {
                       %
                     </span>
                   </div>
+                  <span className="text-[11px] text-slate-500 block leading-snug">
+                    Perda de peso no preparo (descascar, aparar). O preço de custo por{' '}
+                    {formData.unit} utilizável aumenta proporcionalmente.
+                  </span>
                 </div>
 
                 <div className="space-y-1.5">
@@ -637,7 +641,7 @@ export default function Insumos() {
               <div className="p-3.5 bg-amber-50/70 border border-amber-200 rounded-xl flex items-center justify-between">
                 <div>
                   <span className="text-xs uppercase font-bold text-amber-900 tracking-wide block">
-                    Novo Preço de Custo após Redução
+                    Custo por {formData.unit} Utilizável (c/ perda)
                   </span>
                   <span className="text-[11px] text-amber-700">
                     Este valor será considerado nos custos e porções de todas as fichas técnicas
@@ -649,8 +653,8 @@ export default function Insumos() {
                   </span>
                   <span className="text-xs text-amber-700 ml-1">/ {formData.unit}</span>
                   {parseFloat(formData.reduction_percent) > 0 && (
-                    <span className="block text-[11px] text-emerald-700 font-semibold">
-                      - {formData.reduction_percent}% de redução aplicada
+                    <span className="block text-[11px] text-amber-800 font-semibold">
+                      +{formData.reduction_percent}% de perda no preparo aplicada
                     </span>
                   )}
                 </div>

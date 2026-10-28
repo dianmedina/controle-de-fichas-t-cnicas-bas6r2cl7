@@ -24,21 +24,31 @@ export interface Ingredient {
 }
 
 /**
- * Retorna o preço de custo efetivo do insumo após aplicar a porcentagem de redução (desconto).
- * Fórmula: preço × (1 - redução / 100).
- * Se a redução for 0, ausente ou inválida, retorna o próprio preço base.
+ * Retorna o preço de custo efetivo do insumo após aplicar a perda no preparo (redução/quebra).
+ * Como o insumo perde peso/volume ao ser limpo/descascado/desossado, o custo por unidade utilizável aumenta.
+ * Fórmula: preço ÷ (1 - redução / 100). Exemplo: R$ 3,00 / kg com 10% de perda = 3,00 ÷ (1 - 0,10) = R$ 3,33 / kg utilizável.
+ * Se a redução for 0, ausente ou inválida, retorna o próprio preço base (divisão por 1).
+ * Protegido contra redução >= 100% para evitar divisão por zero (limite seguro em 99.9%).
  */
 export function getEffectiveIngredientPrice(
   price: number | undefined | null,
   reductionPercent: number | undefined | null,
 ): number {
   const basePrice = typeof price === 'number' && !isNaN(price) && price >= 0 ? price : 0
+  if (basePrice === 0) return 0
+
   const reduction =
     typeof reductionPercent === 'number' && !isNaN(reductionPercent) && reductionPercent > 0
-      ? Math.min(Math.max(reductionPercent, 0), 100)
+      ? reductionPercent
       : 0
-  if (reduction === 0) return basePrice
-  return basePrice * (1 - reduction / 100)
+
+  if (reduction <= 0) return basePrice
+  if (reduction >= 100) return basePrice // Evita divisão por zero ou negativa se passar de 100%
+
+  const usableFactor = 1 - reduction / 100
+  if (usableFactor <= 0) return basePrice
+
+  return basePrice / usableFactor
 }
 
 export type RecipeType = 'prato' | 'guarnicao'
