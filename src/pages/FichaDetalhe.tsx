@@ -42,6 +42,14 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { useToast } from '@/hooks/use-toast'
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import {
   ArrowLeft,
   Plus,
   Trash2,
@@ -62,6 +70,8 @@ import {
   CheckCircle2,
   FileText,
   Eye,
+  ChevronDown,
+  Users,
 } from 'lucide-react'
 import { PrintableRecipeSheet } from '@/components/PrintableRecipeSheet'
 
@@ -99,6 +109,9 @@ export default function FichaDetalhe() {
 
   // Confirmação de exclusão de item
   const [deletingItemId, setDeletingItemId] = useState<string | null>(null)
+
+  // Modo de impressão (completa com custos ou para equipe sem custos)
+  const [printHideCosts, setPrintHideCosts] = useState<boolean>(false)
 
   // Upload e gerenciamento de Fotos
   const [uploadingPhoto, setUploadingPhoto] = useState<'photo_1' | 'photo_2' | null>(null)
@@ -403,8 +416,12 @@ export default function FichaDetalhe() {
     }
   }
 
-  const handlePrint = () => {
-    window.print()
+  const handlePrint = (hideCosts: boolean = false) => {
+    setPrintHideCosts(hideCosts)
+    // Permite que o React aplique o estado antes do acionamento do diálogo nativo de impressão
+    setTimeout(() => {
+      window.print()
+    }, 50)
   }
 
   if (loading) {
@@ -435,16 +452,57 @@ export default function FichaDetalhe() {
         </Button>
 
         <div className="flex items-center gap-2">
-          <Button
-            variant="default"
-            size="sm"
-            onClick={handlePrint}
-            className="bg-slate-900 hover:bg-slate-800 text-white shadow-xs font-semibold"
-            title="Exporta / Imprime a ficha técnica em folha única (A4)"
-          >
-            <Printer className="h-4 w-4 mr-1.5 text-amber-400" />
-            Exportar PDF / Imprimir (1 Pág)
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="default"
+                size="sm"
+                className="bg-slate-900 hover:bg-slate-800 text-white shadow-xs font-semibold gap-1.5"
+                title="Exporta ou imprime a ficha técnica em folha única (A4)"
+              >
+                <Printer className="h-4 w-4 text-amber-400" />
+                <span>Exportar PDF / Imprimir (1 Pág)</span>
+                <ChevronDown className="h-3.5 w-3.5 opacity-70 ml-0.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-72 p-1.5">
+              <DropdownMenuLabel className="text-xs text-slate-500 font-semibold px-2 py-1">
+                Escolha a versão da ficha técnica:
+              </DropdownMenuLabel>
+              <DropdownMenuItem
+                onClick={() => handlePrint(false)}
+                className="cursor-pointer flex items-start gap-2.5 p-2 rounded-md hover:bg-slate-100 focus:bg-slate-100"
+              >
+                <div className="p-1 rounded bg-amber-100 text-amber-800 mt-0.5">
+                  <DollarSign className="h-4 w-4" />
+                </div>
+                <div>
+                  <div className="font-semibold text-sm text-slate-900">Completa (com custos)</div>
+                  <div className="text-[11px] text-slate-500 leading-tight mt-0.5">
+                    Inclui preço base, custo no prato, mão de obra, CMV, preço de venda e margens.
+                  </div>
+                </div>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator className="my-1" />
+              <DropdownMenuItem
+                onClick={() => handlePrint(true)}
+                className="cursor-pointer flex items-start gap-2.5 p-2 rounded-md hover:bg-slate-100 focus:bg-slate-100"
+              >
+                <div className="p-1 rounded bg-blue-100 text-blue-800 mt-0.5">
+                  <Users className="h-4 w-4" />
+                </div>
+                <div>
+                  <div className="font-semibold text-sm text-slate-900">
+                    Para a equipe (sem custos)
+                  </div>
+                  <div className="text-[11px] text-slate-500 leading-tight mt-0.5">
+                    Sem nenhum valor financeiro. Exibe insumos, quantidades, rendimento, fotos e
+                    modo de preparo.
+                  </div>
+                </div>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           {!isEditingHeader && (
             <Button
@@ -461,7 +519,7 @@ export default function FichaDetalhe() {
       </div>
 
       {/* Componente renderizado estritamente na folha de impressão / PDF (1 página) */}
-      <PrintableRecipeSheet recipe={costSummary} />
+      <PrintableRecipeSheet recipe={costSummary} hideCosts={printHideCosts} />
 
       {/* Formulário de Cabeçalho (Modo Edição ou Visualização) */}
       <div className="no-print space-y-6">

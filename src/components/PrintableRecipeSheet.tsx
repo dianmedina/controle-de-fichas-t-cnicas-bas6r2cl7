@@ -6,9 +6,13 @@ import { ChefHat, CookingPot, Utensils, Scale, DollarSign, Image as ImageIcon } 
 
 interface PrintableRecipeSheetProps {
   recipe: RecipeWithCost
+  hideCosts?: boolean
 }
 
-export const PrintableRecipeSheet: React.FC<PrintableRecipeSheetProps> = ({ recipe }) => {
+export const PrintableRecipeSheet: React.FC<PrintableRecipeSheetProps> = ({
+  recipe,
+  hideCosts = false,
+}) => {
   const photo1Url = recipe.photo_1 ? recipesService.getPhotoUrl(recipe, recipe.photo_1) : ''
   const photo2Url = recipe.photo_2 ? recipesService.getPhotoUrl(recipe, recipe.photo_2) : ''
   const hasPhotos = Boolean(photo1Url || photo2Url)
@@ -47,55 +51,88 @@ export const PrintableRecipeSheet: React.FC<PrintableRecipeSheetProps> = ({ reci
         </div>
 
         {/* Resumo de Indicadores Compacto */}
-        <div className="grid grid-cols-5 gap-2 mt-2 pt-2 border-t border-slate-200 text-center">
-          <div className="bg-slate-50 border border-slate-200 rounded p-1">
-            <span className="block text-[9px] uppercase font-bold text-slate-500">Rendimento</span>
-            <span className="text-xs font-bold text-slate-900">
-              {recipe.yield_portions} {recipe.yield_portions > 1 ? 'porções' : 'porção'}
-            </span>
-          </div>
+        {hideCosts ? (
+          <div className="grid grid-cols-3 gap-2 mt-2 pt-2 border-t border-slate-200 text-center">
+            <div className="bg-slate-50 border border-slate-200 rounded p-1.5">
+              <span className="block text-[9px] uppercase font-bold text-slate-500">
+                Rendimento
+              </span>
+              <span className="text-xs font-bold text-slate-900">
+                {recipe.yield_portions} {recipe.yield_portions > 1 ? 'porções' : 'porção'}
+              </span>
+            </div>
 
-          <div className="bg-slate-50 border border-slate-200 rounded p-1">
-            <span className="block text-[9px] uppercase font-bold text-slate-500">
-              Custo Total Batelada
-            </span>
-            <span className="text-xs font-bold text-slate-900">
-              {formatCurrency(recipe.totalCost)}
-            </span>
-          </div>
+            <div className="bg-slate-50 border border-slate-200 rounded p-1.5">
+              <span className="block text-[9px] uppercase font-bold text-slate-500">
+                Total de Insumos
+              </span>
+              <span className="text-xs font-bold text-slate-900">
+                {recipe.items.length} {recipe.items.length === 1 ? 'item' : 'itens'}
+              </span>
+            </div>
 
-          <div className="bg-amber-50/70 border border-amber-300 rounded p-1">
-            <span className="block text-[9px] uppercase font-bold text-amber-900">
-              Custo por Porção (CMV)
-            </span>
-            <span className="text-xs font-extrabold text-amber-950">
-              {formatCurrency(recipe.costPerPortion)}
-            </span>
+            <div className="bg-amber-50/70 border border-amber-300 rounded p-1.5">
+              <span className="block text-[9px] uppercase font-bold text-amber-900">
+                Finalidade
+              </span>
+              <span className="text-xs font-extrabold text-amber-950">
+                Produção • Equipe de Cozinha
+              </span>
+            </div>
           </div>
+        ) : (
+          <div className="grid grid-cols-5 gap-2 mt-2 pt-2 border-t border-slate-200 text-center">
+            <div className="bg-slate-50 border border-slate-200 rounded p-1">
+              <span className="block text-[9px] uppercase font-bold text-slate-500">
+                Rendimento
+              </span>
+              <span className="text-xs font-bold text-slate-900">
+                {recipe.yield_portions} {recipe.yield_portions > 1 ? 'porções' : 'porção'}
+              </span>
+            </div>
 
-          <div className="bg-slate-50 border border-slate-200 rounded p-1">
-            <span className="block text-[9px] uppercase font-bold text-slate-500">
-              Preço de Venda
-            </span>
-            <span className="text-xs font-bold text-slate-900">
-              {recipe.selling_price > 0 ? formatCurrency(recipe.selling_price) : 'Não definido'}
-            </span>
-          </div>
+            <div className="bg-slate-50 border border-slate-200 rounded p-1">
+              <span className="block text-[9px] uppercase font-bold text-slate-500">
+                Custo Total Batelada
+              </span>
+              <span className="text-xs font-bold text-slate-900">
+                {formatCurrency(recipe.totalCost)}
+              </span>
+            </div>
 
-          <div className="bg-slate-50 border border-slate-200 rounded p-1">
-            <span className="block text-[9px] uppercase font-bold text-slate-500">
-              Margem Estimada
-            </span>
-            <span className="text-xs font-bold text-emerald-800">
-              {recipe.selling_price > 0 ? formatPercent(recipe.marginPercent) : '-'}
-            </span>
+            <div className="bg-amber-50/70 border border-amber-300 rounded p-1">
+              <span className="block text-[9px] uppercase font-bold text-amber-900">
+                Custo por Porção (CMV)
+              </span>
+              <span className="text-xs font-extrabold text-amber-950">
+                {formatCurrency(recipe.costPerPortion)}
+              </span>
+            </div>
+
+            <div className="bg-slate-50 border border-slate-200 rounded p-1">
+              <span className="block text-[9px] uppercase font-bold text-slate-500">
+                Preço de Venda
+              </span>
+              <span className="text-xs font-bold text-slate-900">
+                {recipe.selling_price > 0 ? formatCurrency(recipe.selling_price) : 'Não definido'}
+              </span>
+            </div>
+
+            <div className="bg-slate-50 border border-slate-200 rounded p-1">
+              <span className="block text-[9px] uppercase font-bold text-slate-500">
+                Margem Estimada
+              </span>
+              <span className="text-xs font-bold text-emerald-800">
+                {recipe.selling_price > 0 ? formatPercent(recipe.marginPercent) : '-'}
+              </span>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Grid de 2 Colunas para caber perfeitamente em 1 página */}
       <div className="grid grid-cols-12 gap-3 items-start">
-        {/* Coluna Esquerda: Ingredientes e Custos (7 colunas) */}
+        {/* Coluna Esquerda: Ingredientes (e Custos se completo) */}
         <div className="col-span-7 flex flex-col gap-2">
           {/* Tabela de Insumos */}
           <div className="border border-slate-300 rounded overflow-hidden">
@@ -111,9 +148,15 @@ export const PrintableRecipeSheet: React.FC<PrintableRecipeSheetProps> = ({ reci
               <thead>
                 <tr className="bg-slate-100 border-b border-slate-300 text-[10px] uppercase text-slate-700 font-bold">
                   <th className="py-1 px-1.5">Insumo</th>
-                  <th className="py-1 px-1 text-center">Qtd. / Unid.</th>
-                  <th className="py-1 px-1 text-right">Preço Base</th>
-                  <th className="py-1 px-1.5 text-right">Custo</th>
+                  <th className={`py-1 px-1.5 ${hideCosts ? 'text-right' : 'text-center'}`}>
+                    Qtd. / Unid.
+                  </th>
+                  {!hideCosts && (
+                    <>
+                      <th className="py-1 px-1 text-right">Preço Base</th>
+                      <th className="py-1 px-1.5 text-right">Custo</th>
+                    </>
+                  )}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
@@ -135,70 +178,110 @@ export const PrintableRecipeSheet: React.FC<PrintableRecipeSheetProps> = ({ reci
                           </span>
                         )}
                       </td>
-                      <td className="py-1 px-1 text-center font-bold text-slate-800 whitespace-nowrap">
+                      <td
+                        className={`py-1 px-1.5 font-bold text-slate-800 whitespace-nowrap ${hideCosts ? 'text-right text-xs' : 'text-center'}`}
+                      >
                         {item.quantity}{' '}
                         <span className="text-[9px] font-semibold text-slate-600">{item.unit}</span>
                       </td>
-                      <td className="py-1 px-1 text-right text-slate-600 text-[10px] whitespace-nowrap">
-                        {ing ? `${formatCurrency(ing.price)}/${ing.unit}` : '-'}
-                      </td>
-                      <td className="py-1 px-1.5 text-right font-bold text-slate-950 whitespace-nowrap">
-                        {formatCurrency(cost)}
-                      </td>
+                      {!hideCosts && (
+                        <>
+                          <td className="py-1 px-1 text-right text-slate-600 text-[10px] whitespace-nowrap">
+                            {ing ? `${formatCurrency(ing.price)}/${ing.unit}` : '-'}
+                          </td>
+                          <td className="py-1 px-1.5 text-right font-bold text-slate-950 whitespace-nowrap">
+                            {formatCurrency(cost)}
+                          </td>
+                        </>
+                      )}
                     </tr>
                   )
                 })}
               </tbody>
-              <tfoot>
-                <tr className="bg-slate-100 border-t-2 border-slate-300 text-[10px] font-bold">
-                  <td colSpan={3} className="py-1 px-1.5 uppercase text-slate-700">
-                    Subtotal Insumos:
-                  </td>
-                  <td className="py-1 px-1.5 text-right text-slate-900 font-extrabold">
-                    {formatCurrency(recipe.ingredientsCost)}
-                  </td>
-                </tr>
-                {recipe.laborCost > 0 && (
-                  <tr className="bg-slate-100 border-t border-slate-200 text-[10px] font-bold">
+              {!hideCosts ? (
+                <tfoot>
+                  <tr className="bg-slate-100 border-t-2 border-slate-300 text-[10px] font-bold">
                     <td colSpan={3} className="py-1 px-1.5 uppercase text-slate-700">
-                      Mão de Obra de Preparo:
+                      Subtotal Insumos:
                     </td>
                     <td className="py-1 px-1.5 text-right text-slate-900 font-extrabold">
-                      {formatCurrency(recipe.laborCost)}
+                      {formatCurrency(recipe.ingredientsCost)}
                     </td>
                   </tr>
-                )}
-                <tr className="bg-amber-100/70 border-t border-amber-300 text-[11px] font-extrabold text-amber-950">
-                  <td colSpan={3} className="py-1 px-1.5 uppercase">
-                    Custo Final da Batelada:
-                  </td>
-                  <td className="py-1 px-1.5 text-right">{formatCurrency(recipe.totalCost)}</td>
-                </tr>
-              </tfoot>
+                  {recipe.laborCost > 0 && (
+                    <tr className="bg-slate-100 border-t border-slate-200 text-[10px] font-bold">
+                      <td colSpan={3} className="py-1 px-1.5 uppercase text-slate-700">
+                        Mão de Obra de Preparo:
+                      </td>
+                      <td className="py-1 px-1.5 text-right text-slate-900 font-extrabold">
+                        {formatCurrency(recipe.laborCost)}
+                      </td>
+                    </tr>
+                  )}
+                  <tr className="bg-amber-100/70 border-t border-amber-300 text-[11px] font-extrabold text-amber-950">
+                    <td colSpan={3} className="py-1 px-1.5 uppercase">
+                      Custo Final da Batelada:
+                    </td>
+                    <td className="py-1 px-1.5 text-right">{formatCurrency(recipe.totalCost)}</td>
+                  </tr>
+                </tfoot>
+              ) : (
+                <tfoot>
+                  <tr className="bg-slate-100 border-t border-slate-300 text-[10px] font-bold text-slate-700">
+                    <td className="py-1 px-1.5 uppercase">Total de Itens da Receita:</td>
+                    <td className="py-1 px-1.5 text-right text-slate-900 font-extrabold">
+                      {recipe.items.length} {recipe.items.length === 1 ? 'insumo' : 'insumos'}
+                    </td>
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
 
-          {/* Destaque do Custo Unitário */}
-          <div className="border border-slate-300 rounded p-1.5 bg-slate-50 flex items-center justify-between text-[11px]">
-            <div>
-              <span className="text-[9px] uppercase font-bold text-slate-500 block">
-                Custo de Produção por Porção
-              </span>
-              <span className="font-extrabold text-sm text-slate-950">
-                {formatCurrency(recipe.costPerPortion)}
-              </span>
-            </div>
-            {recipe.selling_price > 0 && (
-              <div className="text-right">
+          {/* Destaque do Custo Unitário (somente na versão Completa) */}
+          {!hideCosts ? (
+            <div className="border border-slate-300 rounded p-1.5 bg-slate-50 flex items-center justify-between text-[11px]">
+              <div>
                 <span className="text-[9px] uppercase font-bold text-slate-500 block">
-                  Lucro Bruto por Porção
+                  Custo de Produção por Porção
                 </span>
-                <span className="font-bold text-xs text-emerald-800">
-                  {formatCurrency(recipe.profitPerPortion)} ({formatPercent(recipe.marginPercent)})
+                <span className="font-extrabold text-sm text-slate-950">
+                  {formatCurrency(recipe.costPerPortion)}
                 </span>
               </div>
-            )}
-          </div>
+              {recipe.selling_price > 0 && (
+                <div className="text-right">
+                  <span className="text-[9px] uppercase font-bold text-slate-500 block">
+                    Lucro Bruto por Porção
+                  </span>
+                  <span className="font-bold text-xs text-emerald-800">
+                    {formatCurrency(recipe.profitPerPortion)} ({formatPercent(recipe.marginPercent)}
+                    )
+                  </span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="border border-slate-300 rounded p-1.5 bg-slate-50 flex items-center justify-between text-[11px]">
+              <div>
+                <span className="text-[9px] uppercase font-bold text-slate-500 block">
+                  Rendimento Programado
+                </span>
+                <span className="font-bold text-xs text-slate-900">
+                  {recipe.yield_portions}{' '}
+                  {recipe.yield_portions > 1 ? 'porções padronizadas' : 'porção padronizada'}
+                </span>
+              </div>
+              <div className="text-right">
+                <span className="text-[9px] uppercase font-bold text-slate-500 block">
+                  Controle Operacional
+                </span>
+                <span className="font-medium text-[10px] text-slate-600">
+                  Respeitar rigorosamente as pesagens
+                </span>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Coluna Direita: Modo de Fazer e Fotos (5 colunas) */}
