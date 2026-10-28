@@ -31,11 +31,21 @@ export default function Login() {
     setLoading(true)
 
     try {
-      await login(email.trim(), password)
-      navigate(from, { replace: true })
+      const loggedUser = await login(email.trim(), password)
+      // Se for Cozinha ou se tentou rota restrita, redireciona para /fichas
+      if (loggedUser.role === 'cozinha') {
+        navigate('/fichas', { replace: true })
+      } else {
+        // Se a rota 'from' for raiz ou qualquer outra válida, vai pra ela
+        navigate(from === '/login' ? '/' : from, { replace: true })
+      }
     } catch (err: unknown) {
       console.error('Erro de login:', err)
-      setError('Credenciais inválidas. Verifique seu e-mail e senha.')
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : 'Credenciais inválidas. Verifique seu e-mail e senha.'
+      setError(message)
     } finally {
       setLoading(false)
     }

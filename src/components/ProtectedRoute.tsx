@@ -3,8 +3,13 @@ import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 import { Loader2 } from 'lucide-react'
 
-export const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { isAuthenticated, isLoading } = useAuth()
+interface ProtectedRouteProps {
+  children: React.ReactNode
+  requiredRole?: 'gestor'
+}
+
+export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requiredRole }) => {
+  const { isAuthenticated, isLoading, isCozinha } = useAuth()
   const location = useLocation()
 
   if (isLoading) {
@@ -20,6 +25,11 @@ export const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ childr
 
   if (!isAuthenticated) {
     return <Navigate to="/login" state={{ from: location }} replace />
+  }
+
+  // Se a rota exige perfil Gestor e o usuário é Cozinha, redireciona para /fichas
+  if (requiredRole === 'gestor' && isCozinha) {
+    return <Navigate to="/fichas" replace />
   }
 
   return <>{children}</>

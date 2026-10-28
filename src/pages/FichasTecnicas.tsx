@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useAuth } from '@/contexts/AuthContext'
 import { recipesService, RecipeWithCost } from '@/services/recipes'
 import { ingredientsService } from '@/services/ingredients'
 import {
@@ -63,6 +64,7 @@ import {
 
 export default function FichasTecnicas() {
   const navigate = useNavigate()
+  const { isCozinha } = useAuth()
   const { toast } = useToast()
   const [recipesWithCost, setRecipesWithCost] = useState<RecipeWithCost[]>([])
   const [rawRecipes, setRawRecipes] = useState<Recipe[]>([])
@@ -339,27 +341,29 @@ export default function FichasTecnicas() {
             Gerenciamento e cálculo de custo operacional de pratos principais e guarnições.
           </p>
         </div>
-        <div className="flex items-center gap-2 self-start sm:self-auto">
-          <Button
-            variant="outline"
-            onClick={() => setIsImportOpen(true)}
-            className="border-orange-300 text-orange-900 hover:bg-orange-50 shadow-xs flex items-center gap-1.5"
-          >
-            <FileSpreadsheet className="h-4 w-4 text-orange-700" />
-            Importar Fichas (.xlsx)
-          </Button>
-          <Button
-            onClick={handleOpenCreate}
-            className="bg-amber-600 hover:bg-amber-700 text-white shadow-sm flex items-center gap-1.5"
-          >
-            <Plus className="h-4 w-4" />
-            Nova Ficha Técnica
-          </Button>
-        </div>
+        {!isCozinha && (
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            <Button
+              variant="outline"
+              onClick={() => setIsImportOpen(true)}
+              className="border-orange-300 text-orange-900 hover:bg-orange-50 shadow-xs flex items-center gap-1.5"
+            >
+              <FileSpreadsheet className="h-4 w-4 text-orange-700" />
+              Importar Fichas (.xlsx)
+            </Button>
+            <Button
+              onClick={handleOpenCreate}
+              className="bg-amber-600 hover:bg-amber-700 text-white shadow-sm flex items-center gap-1.5"
+            >
+              <Plus className="h-4 w-4" />
+              Nova Ficha Técnica
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Cards de Métricas */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className={`grid grid-cols-1 ${isCozinha ? 'sm:grid-cols-2' : 'sm:grid-cols-3'} gap-4`}>
         <Card className="shadow-xs border-slate-200">
           <CardHeader className="p-4 pb-2">
             <CardDescription className="text-xs uppercase font-semibold text-slate-500">
@@ -375,45 +379,63 @@ export default function FichasTecnicas() {
           </CardContent>
         </Card>
 
-        <Card className="shadow-xs border-slate-200">
-          <CardHeader className="p-4 pb-2">
-            <CardDescription className="text-xs uppercase font-semibold text-slate-500">
-              Custo Médio por Porção
-            </CardDescription>
-            <CardTitle className="text-2xl font-bold text-amber-700">
-              {recipesWithCost.length > 0
-                ? formatCurrency(
-                    recipesWithCost.reduce((acc, r) => acc + r.costPerPortion, 0) /
-                      recipesWithCost.length,
-                  )
-                : 'R$ 0,00'}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-4 pt-0 text-xs text-slate-500">
-            Soma dos insumos dividida pelo rendimento
-          </CardContent>
-        </Card>
+        {isCozinha ? (
+          <Card className="shadow-xs border-blue-200 bg-blue-50/40">
+            <CardHeader className="p-4 pb-2">
+              <CardDescription className="text-xs uppercase font-semibold text-blue-700">
+                Acesso Operacional (Cozinha)
+              </CardDescription>
+              <CardTitle className="text-base font-bold text-blue-900">
+                Consulta & Impressão para Equipe
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-4 pt-0 text-xs text-blue-700">
+              Visualização restrita a insumos, quantidades, fotos e modo de preparo.
+            </CardContent>
+          </Card>
+        ) : (
+          <>
+            <Card className="shadow-xs border-slate-200">
+              <CardHeader className="p-4 pb-2">
+                <CardDescription className="text-xs uppercase font-semibold text-slate-500">
+                  Custo Médio por Porção
+                </CardDescription>
+                <CardTitle className="text-2xl font-bold text-amber-700">
+                  {recipesWithCost.length > 0
+                    ? formatCurrency(
+                        recipesWithCost.reduce((acc, r) => acc + r.costPerPortion, 0) /
+                          recipesWithCost.length,
+                      )
+                    : 'R$ 0,00'}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 pt-0 text-xs text-slate-500">
+                Soma dos insumos dividida pelo rendimento
+              </CardContent>
+            </Card>
 
-        <Card className="shadow-xs border-slate-200">
-          <CardHeader className="p-4 pb-2">
-            <CardDescription className="text-xs uppercase font-semibold text-slate-500">
-              Margem Média Bruta
-            </CardDescription>
-            <CardTitle className="text-2xl font-bold text-emerald-700">
-              {recipesWithCost.filter((r) => r.selling_price > 0).length > 0
-                ? formatPercent(
-                    recipesWithCost
-                      .filter((r) => r.selling_price > 0)
-                      .reduce((acc, r) => acc + r.marginPercent, 0) /
-                      recipesWithCost.filter((r) => r.selling_price > 0).length,
-                  )
-                : '0%'}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-4 pt-0 text-xs text-slate-500">
-            Considerando os preços de venda definidos
-          </CardContent>
-        </Card>
+            <Card className="shadow-xs border-slate-200">
+              <CardHeader className="p-4 pb-2">
+                <CardDescription className="text-xs uppercase font-semibold text-slate-500">
+                  Margem Média Bruta
+                </CardDescription>
+                <CardTitle className="text-2xl font-bold text-emerald-700">
+                  {recipesWithCost.filter((r) => r.selling_price > 0).length > 0
+                    ? formatPercent(
+                        recipesWithCost
+                          .filter((r) => r.selling_price > 0)
+                          .reduce((acc, r) => acc + r.marginPercent, 0) /
+                          recipesWithCost.filter((r) => r.selling_price > 0).length,
+                      )
+                    : '0%'}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 pt-0 text-xs text-slate-500">
+                Considerando os preços de venda definidos
+              </CardContent>
+            </Card>
+          </>
+        )}
       </div>
 
       {/* Filtros e Busca */}
@@ -473,7 +495,7 @@ export default function FichasTecnicas() {
                 ? 'Nenhuma ficha corresponde aos filtros aplicados.'
                 : 'Cadastre a primeira ficha técnica para calcular custos de produção dos pratos.'}
             </p>
-            {!searchTerm && typeFilter === 'all' && (
+            {!searchTerm && typeFilter === 'all' && !isCozinha && (
               <Button
                 onClick={handleOpenCreate}
                 variant="outline"
@@ -497,15 +519,19 @@ export default function FichasTecnicas() {
                   <TableHead className="font-semibold text-slate-700 text-center">
                     Rendimento
                   </TableHead>
-                  <TableHead className="font-semibold text-slate-700 text-right">
-                    Custo por Porção
-                  </TableHead>
-                  <TableHead className="font-semibold text-slate-700 text-right">
-                    Preço de Venda
-                  </TableHead>
-                  <TableHead className="font-semibold text-slate-700 text-right">
-                    Margem Estimada
-                  </TableHead>
+                  {!isCozinha && (
+                    <>
+                      <TableHead className="font-semibold text-slate-700 text-right">
+                        Custo por Porção
+                      </TableHead>
+                      <TableHead className="font-semibold text-slate-700 text-right">
+                        Preço de Venda
+                      </TableHead>
+                      <TableHead className="font-semibold text-slate-700 text-right">
+                        Margem Estimada
+                      </TableHead>
+                    </>
+                  )}
                   <TableHead className="font-semibold text-slate-700 text-right">Ações</TableHead>
                 </TableRow>
               </TableHeader>
@@ -571,40 +597,44 @@ export default function FichasTecnicas() {
                       )}
                     </TableCell>
 
-                    <TableCell className="text-right font-semibold text-slate-800">
-                      <div>{formatCurrency(recipe.costPerPortion)}</div>
-                      {recipe.labor_cost !== undefined && recipe.labor_cost > 0 && (
-                        <span className="text-[10px] text-amber-700 bg-amber-50 px-1 py-0.5 rounded border border-amber-200">
-                          inclui M.O.{' '}
-                          {formatCurrency(recipe.labor_cost / (recipe.yield_portions || 1))}
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right font-semibold text-slate-900">
-                      {recipe.selling_price > 0 ? (
-                        formatCurrency(recipe.selling_price)
-                      ) : (
-                        <span className="text-xs text-slate-400 italic">Não definido</span>
-                      )}
-                    </TableCell>
+                    {!isCozinha && (
+                      <>
+                        <TableCell className="text-right font-semibold text-slate-800">
+                          <div>{formatCurrency(recipe.costPerPortion)}</div>
+                          {recipe.labor_cost !== undefined && recipe.labor_cost > 0 && (
+                            <span className="text-[10px] text-amber-700 bg-amber-50 px-1 py-0.5 rounded border border-amber-200">
+                              inclui M.O.{' '}
+                              {formatCurrency(recipe.labor_cost / (recipe.yield_portions || 1))}
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right font-semibold text-slate-900">
+                          {recipe.selling_price > 0 ? (
+                            formatCurrency(recipe.selling_price)
+                          ) : (
+                            <span className="text-xs text-slate-400 italic">Não definido</span>
+                          )}
+                        </TableCell>
 
-                    <TableCell className="text-right">
-                      {recipe.selling_price > 0 ? (
-                        <span
-                          className={`inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-full ${
-                            recipe.marginPercent >= 60
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                              : recipe.marginPercent >= 40
-                                ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                                : 'bg-amber-50 text-amber-700 border border-amber-200'
-                          }`}
-                        >
-                          {formatPercent(recipe.marginPercent)}
-                        </span>
-                      ) : (
-                        <span className="text-xs text-slate-400">-</span>
-                      )}
-                    </TableCell>
+                        <TableCell className="text-right">
+                          {recipe.selling_price > 0 ? (
+                            <span
+                              className={`inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-full ${
+                                recipe.marginPercent >= 60
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                  : recipe.marginPercent >= 40
+                                    ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                                    : 'bg-amber-50 text-amber-700 border border-amber-200'
+                              }`}
+                            >
+                              {formatPercent(recipe.marginPercent)}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-slate-400">-</span>
+                          )}
+                        </TableCell>
+                      </>
+                    )}
 
                     <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1">
@@ -613,29 +643,33 @@ export default function FichasTecnicas() {
                           size="sm"
                           onClick={() => navigate(`/fichas/${recipe.id}`)}
                           className="h-8 px-2 text-amber-800 hover:bg-amber-50 text-xs font-medium"
-                          title="Ver ficha completa"
+                          title="Ver ficha técnica"
                         >
                           <Eye className="h-3.5 w-3.5 mr-1" />
-                          Detalhes
+                          {isCozinha ? 'Ver Ficha' : 'Detalhes'}
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleOpenEdit(recipe)}
-                          className="h-8 w-8 text-slate-600 hover:text-amber-700 hover:bg-amber-50"
-                          title="Editar cabeçalho"
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleStartDelete(recipe)}
-                          className="h-8 w-8 text-slate-400 hover:text-red-600 hover:bg-red-50"
-                          title="Excluir ficha"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        {!isCozinha && (
+                          <>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleOpenEdit(recipe)}
+                              className="h-8 w-8 text-slate-600 hover:text-amber-700 hover:bg-amber-50"
+                              title="Editar cabeçalho"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleStartDelete(recipe)}
+                              className="h-8 w-8 text-slate-400 hover:text-red-600 hover:bg-red-50"
+                              title="Excluir ficha"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>

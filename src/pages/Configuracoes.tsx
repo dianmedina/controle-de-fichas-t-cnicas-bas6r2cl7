@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { recipesService } from '@/services/recipes'
 import { Recipe, formatCurrency } from '@/types/restaurant'
+import { UserManagementSection } from '@/components/UserManagementSection'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -193,6 +194,9 @@ export default function Configuracoes() {
           </p>
         </div>
       </div>
+
+      {/* Bloco 1: Gestão de Usuários e Perfis (Gestor / Cozinha) */}
+      <UserManagementSection />
 
       {/* Tabela de Preços */}
       <Card className="border-slate-200 shadow-xs">

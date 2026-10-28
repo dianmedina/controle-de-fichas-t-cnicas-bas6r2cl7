@@ -82,12 +82,14 @@ import {
 } from 'lucide-react'
 import { PrintableRecipeSheet } from '@/components/PrintableRecipeSheet'
 import { normalizeName, areNamesEquivalent } from '@/lib/stringUtils'
+import { useAuth } from '@/contexts/AuthContext'
 
 const UNITS: MeasurementUnit[] = ['kg', 'g', 'L', 'mL', 'unidade']
 
 export default function FichaDetalhe() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const { isCozinha } = useAuth()
   const { toast } = useToast()
 
   const [recipe, setRecipe] = useState<Recipe | null>(null)
@@ -625,59 +627,74 @@ export default function FichaDetalhe() {
         </Button>
 
         <div className="flex items-center gap-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="default"
-                size="sm"
-                className="bg-slate-900 hover:bg-slate-800 text-white shadow-xs font-semibold gap-1.5"
-                title="Exporta ou imprime a ficha técnica em folha única (A4)"
-              >
-                <Printer className="h-4 w-4 text-amber-400" />
-                <span>Exportar PDF / Imprimir (1 Pág)</span>
-                <ChevronDown className="h-3.5 w-3.5 opacity-70 ml-0.5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-72 p-1.5">
-              <DropdownMenuLabel className="text-xs text-slate-500 font-semibold px-2 py-1">
-                Escolha a versão da ficha técnica:
-              </DropdownMenuLabel>
-              <DropdownMenuItem
-                onClick={() => handlePrint(false)}
-                className="cursor-pointer flex items-start gap-2.5 p-2 rounded-md hover:bg-slate-100 focus:bg-slate-100"
-              >
-                <div className="p-1 rounded bg-amber-100 text-amber-800 mt-0.5">
-                  <DollarSign className="h-4 w-4" />
-                </div>
-                <div>
-                  <div className="font-semibold text-sm text-slate-900">Completa (com custos)</div>
-                  <div className="text-[11px] text-slate-500 leading-tight mt-0.5">
-                    Inclui preço base, custo no prato, mão de obra, CMV, preço de venda e margens.
+          {isCozinha ? (
+            <Button
+              variant="default"
+              size="sm"
+              onClick={() => handlePrint(true)}
+              className="bg-slate-900 hover:bg-slate-800 text-white shadow-xs font-semibold gap-1.5"
+              title="Exporta ou imprime a ficha técnica para a equipe de cozinha (sem custos)"
+            >
+              <Printer className="h-4 w-4 text-amber-400" />
+              <span>Imprimir Ficha Operacional</span>
+            </Button>
+          ) : (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="default"
+                  size="sm"
+                  className="bg-slate-900 hover:bg-slate-800 text-white shadow-xs font-semibold gap-1.5"
+                  title="Exporta ou imprime a ficha técnica em folha única (A4)"
+                >
+                  <Printer className="h-4 w-4 text-amber-400" />
+                  <span>Exportar PDF / Imprimir (1 Pág)</span>
+                  <ChevronDown className="h-3.5 w-3.5 opacity-70 ml-0.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-72 p-1.5">
+                <DropdownMenuLabel className="text-xs text-slate-500 font-semibold px-2 py-1">
+                  Escolha a versão da ficha técnica:
+                </DropdownMenuLabel>
+                <DropdownMenuItem
+                  onClick={() => handlePrint(false)}
+                  className="cursor-pointer flex items-start gap-2.5 p-2 rounded-md hover:bg-slate-100 focus:bg-slate-100"
+                >
+                  <div className="p-1 rounded bg-amber-100 text-amber-800 mt-0.5">
+                    <DollarSign className="h-4 w-4" />
                   </div>
-                </div>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator className="my-1" />
-              <DropdownMenuItem
-                onClick={() => handlePrint(true)}
-                className="cursor-pointer flex items-start gap-2.5 p-2 rounded-md hover:bg-slate-100 focus:bg-slate-100"
-              >
-                <div className="p-1 rounded bg-blue-100 text-blue-800 mt-0.5">
-                  <Users className="h-4 w-4" />
-                </div>
-                <div>
-                  <div className="font-semibold text-sm text-slate-900">
-                    Para a equipe (sem custos)
+                  <div>
+                    <div className="font-semibold text-sm text-slate-900">
+                      Completa (com custos)
+                    </div>
+                    <div className="text-[11px] text-slate-500 leading-tight mt-0.5">
+                      Inclui preço base, custo no prato, mão de obra, CMV, preço de venda e margens.
+                    </div>
                   </div>
-                  <div className="text-[11px] text-slate-500 leading-tight mt-0.5">
-                    Sem nenhum valor financeiro. Exibe insumos, quantidades, rendimento, fotos e
-                    modo de preparo.
+                </DropdownMenuItem>
+                <DropdownMenuSeparator className="my-1" />
+                <DropdownMenuItem
+                  onClick={() => handlePrint(true)}
+                  className="cursor-pointer flex items-start gap-2.5 p-2 rounded-md hover:bg-slate-100 focus:bg-slate-100"
+                >
+                  <div className="p-1 rounded bg-blue-100 text-blue-800 mt-0.5">
+                    <Users className="h-4 w-4" />
                   </div>
-                </div>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+                  <div>
+                    <div className="font-semibold text-sm text-slate-900">
+                      Para a equipe (sem custos)
+                    </div>
+                    <div className="text-[11px] text-slate-500 leading-tight mt-0.5">
+                      Sem nenhum valor financeiro. Exibe insumos, quantidades, rendimento, fotos e
+                      modo de preparo.
+                    </div>
+                  </div>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
 
-          {!isEditingHeader && (
+          {!isEditingHeader && !isCozinha && (
             <Button
               variant="outline"
               size="sm"
@@ -694,7 +711,7 @@ export default function FichaDetalhe() {
       {/* Componente renderizado estritamente na folha de impressão / PDF (1 página) */}
       <PrintableRecipeSheet
         recipe={costSummary}
-        hideCosts={printHideCosts}
+        hideCosts={isCozinha ? true : printHideCosts}
         allRecipes={allRecipes}
         allRecipeItems={allRecipeItems}
       />
@@ -925,120 +942,128 @@ export default function FichaDetalhe() {
                   </p>
                 )}
               </div>
-              <div className="w-px h-8 bg-slate-200" />
-              <div>
-                <p className="text-xs uppercase font-semibold text-slate-400">Preço de Venda</p>
-                <p className="text-xl font-bold text-slate-900">
-                  {recipe.selling_price > 0 ? (
-                    formatCurrency(recipe.selling_price)
-                  ) : (
-                    <span className="text-sm text-slate-400 italic">Não definido</span>
-                  )}
-                </p>
-              </div>
-              {recipe.labor_cost !== undefined && recipe.labor_cost > 0 && (
+              {!isCozinha && (
                 <>
                   <div className="w-px h-8 bg-slate-200" />
                   <div>
-                    <p className="text-xs uppercase font-semibold text-slate-400">Mão de Obra</p>
-                    <p className="text-xl font-bold text-slate-800">
-                      {formatCurrency(recipe.labor_cost)}
+                    <p className="text-xs uppercase font-semibold text-slate-400">Preço de Venda</p>
+                    <p className="text-xl font-bold text-slate-900">
+                      {recipe.selling_price > 0 ? (
+                        formatCurrency(recipe.selling_price)
+                      ) : (
+                        <span className="text-sm text-slate-400 italic">Não definido</span>
+                      )}
                     </p>
                   </div>
+                  {recipe.labor_cost !== undefined && recipe.labor_cost > 0 && (
+                    <>
+                      <div className="w-px h-8 bg-slate-200" />
+                      <div>
+                        <p className="text-xs uppercase font-semibold text-slate-400">
+                          Mão de Obra
+                        </p>
+                        <p className="text-xl font-bold text-slate-800">
+                          {formatCurrency(recipe.labor_cost)}
+                        </p>
+                      </div>
+                    </>
+                  )}
                 </>
               )}
             </div>
           </div>
         )}
 
-        {/* Indicadores Financeiros da Ficha */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card className="shadow-xs border-slate-200 bg-white">
-            <CardHeader className="p-4 pb-1">
-              <CardDescription className="text-xs font-semibold uppercase text-slate-500 flex items-center justify-between">
-                <span>Custo total da receita</span>
-                <DollarSign className="h-4 w-4 text-slate-400" />
-              </CardDescription>
-              <CardTitle className="text-2xl font-bold text-slate-900">
-                {formatCurrency(costSummary.totalCost)}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-4 pt-1 text-xs text-slate-500">
-              {costSummary.garnishesCost > 0 || costSummary.laborCost > 0 ? (
-                <span>
-                  Insumos ({formatCurrency(costSummary.ingredientsCost)})
-                  {costSummary.garnishesCost > 0 && (
-                    <> + Guarnições ({formatCurrency(costSummary.garnishesCost)})</>
-                  )}
-                  {costSummary.laborCost > 0 && (
-                    <> + M.O. ({formatCurrency(costSummary.laborCost)})</>
-                  )}
-                </span>
-              ) : (
-                'Soma dos ingredientes e componentes'
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-xs border-slate-200 bg-white">
-            <CardHeader className="p-4 pb-1">
-              <CardDescription className="text-xs font-semibold uppercase text-slate-500 flex items-center justify-between">
-                <span>Custo por Porção (CMV)</span>
-                <Scale className="h-4 w-4 text-amber-600" />
-              </CardDescription>
-              <CardTitle className="text-2xl font-bold text-amber-700">
-                {formatCurrency(costSummary.costPerPortion)}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-4 pt-1 text-xs text-slate-500">
-              Custo unitário por prato servido ao cliente
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-xs border-slate-200 bg-white">
-            <CardHeader className="p-4 pb-1">
-              <CardDescription className="text-xs font-semibold uppercase text-slate-500 flex items-center justify-between">
-                <span>Lucro Bruto por Porção</span>
-                <Sparkles className="h-4 w-4 text-emerald-600" />
-              </CardDescription>
-              <CardTitle className="text-2xl font-bold text-emerald-700">
-                {recipe.selling_price > 0 ? (
-                  formatCurrency(costSummary.profitPerPortion)
+        {/* Indicadores Financeiros da Ficha (Exibidos apenas para Gestor) */}
+        {!isCozinha && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <Card className="shadow-xs border-slate-200 bg-white">
+              <CardHeader className="p-4 pb-1">
+                <CardDescription className="text-xs font-semibold uppercase text-slate-500 flex items-center justify-between">
+                  <span>Custo total da receita</span>
+                  <DollarSign className="h-4 w-4 text-slate-400" />
+                </CardDescription>
+                <CardTitle className="text-2xl font-bold text-slate-900">
+                  {formatCurrency(costSummary.totalCost)}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 pt-1 text-xs text-slate-500">
+                {costSummary.garnishesCost > 0 || costSummary.laborCost > 0 ? (
+                  <span>
+                    Insumos ({formatCurrency(costSummary.ingredientsCost)})
+                    {costSummary.garnishesCost > 0 && (
+                      <> + Guarnições ({formatCurrency(costSummary.garnishesCost)})</>
+                    )}
+                    {costSummary.laborCost > 0 && (
+                      <> + M.O. ({formatCurrency(costSummary.laborCost)})</>
+                    )}
+                  </span>
                 ) : (
-                  <span className="text-base text-slate-400 font-normal">Defina o preço</span>
+                  'Soma dos ingredientes e componentes'
                 )}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-4 pt-1 text-xs text-slate-500">
-              Preço de venda menos o custo por porção
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
 
-          <Card className="shadow-xs border-slate-200 bg-white">
-            <CardHeader className="p-4 pb-1">
-              <CardDescription className="text-xs font-semibold uppercase text-slate-500 flex items-center justify-between">
-                <span>Margem de Contribuição</span>
-                <Percent className="h-4 w-4 text-blue-600" />
-              </CardDescription>
-              <CardTitle className="text-2xl font-bold text-blue-700">
-                {recipe.selling_price > 0 ? (
-                  formatPercent(costSummary.marginPercent)
-                ) : (
-                  <span className="text-base text-slate-400 font-normal">-</span>
-                )}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-4 pt-1 text-xs text-slate-500">
-              {costSummary.marginPercent >= 60
-                ? 'Margem excelente para restaurante'
-                : costSummary.marginPercent >= 40
-                  ? 'Margem dentro da média de mercado'
-                  : recipe.selling_price > 0
-                    ? 'Margem baixa — atenção ao custo de insumo'
-                    : 'Aguardando definição de preço de venda'}
-            </CardContent>
-          </Card>
-        </div>
+            <Card className="shadow-xs border-slate-200 bg-white">
+              <CardHeader className="p-4 pb-1">
+                <CardDescription className="text-xs font-semibold uppercase text-slate-500 flex items-center justify-between">
+                  <span>Custo por Porção (CMV)</span>
+                  <Scale className="h-4 w-4 text-amber-600" />
+                </CardDescription>
+                <CardTitle className="text-2xl font-bold text-amber-700">
+                  {formatCurrency(costSummary.costPerPortion)}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 pt-1 text-xs text-slate-500">
+                Custo unitário por prato servido ao cliente
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-xs border-slate-200 bg-white">
+              <CardHeader className="p-4 pb-1">
+                <CardDescription className="text-xs font-semibold uppercase text-slate-500 flex items-center justify-between">
+                  <span>Lucro Bruto por Porção</span>
+                  <Sparkles className="h-4 w-4 text-emerald-600" />
+                </CardDescription>
+                <CardTitle className="text-2xl font-bold text-emerald-700">
+                  {recipe.selling_price > 0 ? (
+                    formatCurrency(costSummary.profitPerPortion)
+                  ) : (
+                    <span className="text-base text-slate-400 font-normal">Defina o preço</span>
+                  )}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 pt-1 text-xs text-slate-500">
+                Preço de venda menos o custo por porção
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-xs border-slate-200 bg-white">
+              <CardHeader className="p-4 pb-1">
+                <CardDescription className="text-xs font-semibold uppercase text-slate-500 flex items-center justify-between">
+                  <span>Margem de Contribuição</span>
+                  <Percent className="h-4 w-4 text-blue-600" />
+                </CardDescription>
+                <CardTitle className="text-2xl font-bold text-blue-700">
+                  {recipe.selling_price > 0 ? (
+                    formatPercent(costSummary.marginPercent)
+                  ) : (
+                    <span className="text-base text-slate-400 font-normal">-</span>
+                  )}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 pt-1 text-xs text-slate-500">
+                {costSummary.marginPercent >= 60
+                  ? 'Margem excelente para restaurante'
+                  : costSummary.marginPercent >= 40
+                    ? 'Margem dentro da média de mercado'
+                    : recipe.selling_price > 0
+                      ? 'Margem baixa — atenção ao custo de insumo'
+                      : 'Aguardando definição de preço de venda'}
+              </CardContent>
+            </Card>
+          </div>
+        )}
 
         {/* Aviso de Dependência Circular se detectado */}
         {costSummary.hasCycleWarning && (
@@ -1073,18 +1098,20 @@ export default function FichaDetalhe() {
                 </Badge>
               </div>
               <p className="text-xs text-slate-500 mt-1">
-                Fichas técnicas de acompanhamentos (ex.: arroz branco, farofa, vinagrete) cujo custo
-                é somado automaticamente ao custo total da receita deste prato.
+                Fichas técnicas de acompanhamentos (ex.: arroz branco, farofa, vinagrete) que
+                compõem este prato.
               </p>
             </div>
-            <Button
-              onClick={() => handleOpenAddItem('sub_recipe')}
-              size="sm"
-              className="bg-amber-700 hover:bg-amber-800 text-white shadow-xs flex items-center gap-1.5 self-start sm:self-auto text-xs font-semibold"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Incluir Guarnição
-            </Button>
+            {!isCozinha && (
+              <Button
+                onClick={() => handleOpenAddItem('sub_recipe')}
+                size="sm"
+                className="bg-amber-700 hover:bg-amber-800 text-white shadow-xs flex items-center gap-1.5 self-start sm:self-auto text-xs font-semibold"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Incluir Guarnição
+              </Button>
+            )}
           </div>
 
           {garnishItems.length === 0 ? (
@@ -1098,7 +1125,7 @@ export default function FichaDetalhe() {
                 aproveitar a ficha técnica já cadastrada da guarnição sem precisar redigitar os
                 ingredientes.
               </p>
-              {availableGarnishes.length > 0 ? (
+              {availableGarnishes.length > 0 && !isCozinha ? (
                 <Button
                   onClick={() => handleOpenAddItem('sub_recipe')}
                   variant="outline"
@@ -1108,12 +1135,12 @@ export default function FichaDetalhe() {
                   <Plus className="h-3.5 w-3.5 mr-1" />
                   Incluir Ficha de Guarnição
                 </Button>
-              ) : (
+              ) : !isCozinha ? (
                 <p className="text-xs text-amber-700 mt-3 bg-amber-50 inline-block px-3 py-1 rounded-md border border-amber-200">
                   Dica: cadastre fichas técnicas do tipo{' '}
                   <strong>"Guarnição / Acompanhamento"</strong> para poder vinculá-las aqui.
                 </p>
-              )}
+              ) : null}
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -1129,16 +1156,24 @@ export default function FichaDetalhe() {
                     <TableHead className="font-semibold text-slate-700 text-center">
                       Qtd. Porções no Prato
                     </TableHead>
-                    <TableHead className="font-semibold text-slate-700 text-right">
-                      Custo Unitário da Guarnição
-                    </TableHead>
-                    <TableHead className="font-semibold text-slate-700 text-right">
-                      Custo Total no Prato
-                    </TableHead>
-                    <TableHead className="font-semibold text-slate-700 text-right">
-                      % do Custo Total
-                    </TableHead>
-                    <TableHead className="font-semibold text-slate-700 text-right">Ações</TableHead>
+                    {!isCozinha && (
+                      <>
+                        <TableHead className="font-semibold text-slate-700 text-right">
+                          Custo Unitário da Guarnição
+                        </TableHead>
+                        <TableHead className="font-semibold text-slate-700 text-right">
+                          Custo Total no Prato
+                        </TableHead>
+                        <TableHead className="font-semibold text-slate-700 text-right">
+                          % do Custo Total
+                        </TableHead>
+                      </>
+                    )}
+                    {!isCozinha && (
+                      <TableHead className="font-semibold text-slate-700 text-right">
+                        Ações
+                      </TableHead>
+                    )}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1197,37 +1232,41 @@ export default function FichaDetalhe() {
                             {item.quantity === 1 ? 'porção' : 'porções'}
                           </span>
                         </TableCell>
-                        <TableCell className="text-right text-slate-600 text-sm font-medium">
-                          {formatCurrency(garnishPortionCost)} / porção
-                        </TableCell>
-                        <TableCell className="text-right font-bold text-slate-900">
-                          {formatCurrency(subCost)}
-                        </TableCell>
-                        <TableCell className="text-right text-xs font-semibold text-slate-600">
-                          {pct.toFixed(1)}%
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleOpenEditItem(item)}
-                              className="h-8 w-8 text-slate-600 hover:text-amber-700 hover:bg-amber-50"
-                              title="Editar porções da guarnição"
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => setDeletingItemId(item.id)}
-                              className="h-8 w-8 text-slate-400 hover:text-red-600 hover:bg-red-50"
-                              title="Remover guarnição do prato"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </TableCell>
+                        {!isCozinha && (
+                          <>
+                            <TableCell className="text-right text-slate-600 text-sm font-medium">
+                              {formatCurrency(garnishPortionCost)} / porção
+                            </TableCell>
+                            <TableCell className="text-right font-bold text-slate-900">
+                              {formatCurrency(subCost)}
+                            </TableCell>
+                            <TableCell className="text-right text-xs font-semibold text-slate-600">
+                              {pct.toFixed(1)}%
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => handleOpenEditItem(item)}
+                                  className="h-8 w-8 text-slate-600 hover:text-amber-700 hover:bg-amber-50"
+                                  title="Editar porções da guarnição"
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => setDeletingItemId(item.id)}
+                                  className="h-8 w-8 text-slate-400 hover:text-red-600 hover:bg-red-50"
+                                  title="Remover guarnição do prato"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </>
+                        )}
                       </TableRow>
                     )
                   })}
@@ -1256,17 +1295,20 @@ export default function FichaDetalhe() {
                 </Badge>
               </div>
               <p className="text-xs text-slate-500 mt-1">
-                Ingredientes próprios deste prato com custo calculado pelo preço de compra e perda
-                no preparo.
+                {isCozinha
+                  ? 'Ingredientes e quantidades necessárias para a preparação deste prato.'
+                  : 'Ingredientes próprios deste prato com custo calculado pelo preço de compra e perda no preparo.'}
               </p>
             </div>
-            <Button
-              onClick={() => handleOpenAddItem('ingredient')}
-              className="bg-amber-600 hover:bg-amber-700 text-white shadow-xs flex items-center gap-1.5 self-start sm:self-auto text-sm"
-            >
-              <Plus className="h-4 w-4" />
-              Adicionar Insumo
-            </Button>
+            {!isCozinha && (
+              <Button
+                onClick={() => handleOpenAddItem('ingredient')}
+                className="bg-amber-600 hover:bg-amber-700 text-white shadow-xs flex items-center gap-1.5 self-start sm:self-auto text-sm"
+              >
+                <Plus className="h-4 w-4" />
+                Adicionar Insumo
+              </Button>
+            )}
           </div>
 
           {ingredientItems.length === 0 ? (
@@ -1279,14 +1321,16 @@ export default function FichaDetalhe() {
                 Adicione os ingredientes, temperos e itens usados nesta receita para calcular o
                 custo exato.
               </p>
-              <Button
-                onClick={() => handleOpenAddItem('ingredient')}
-                variant="outline"
-                className="mt-4 border-amber-300 text-amber-800 hover:bg-amber-50"
-              >
-                <Plus className="h-4 w-4 mr-1.5" />
-                Adicionar Primeiro Insumo
-              </Button>
+              {!isCozinha && (
+                <Button
+                  onClick={() => handleOpenAddItem('ingredient')}
+                  variant="outline"
+                  className="mt-4 border-amber-300 text-amber-800 hover:bg-amber-50"
+                >
+                  <Plus className="h-4 w-4 mr-1.5" />
+                  Adicionar Primeiro Insumo
+                </Button>
+              )}
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -1298,16 +1342,22 @@ export default function FichaDetalhe() {
                     <TableHead className="font-semibold text-slate-700 text-center">
                       Qtd. Utilizada
                     </TableHead>
-                    <TableHead className="font-semibold text-slate-700 text-right">
-                      Preço Base de Compra
-                    </TableHead>
-                    <TableHead className="font-semibold text-slate-700 text-right">
-                      Custo no Prato
-                    </TableHead>
-                    <TableHead className="font-semibold text-slate-700 text-right">
-                      % do Custo
-                    </TableHead>
-                    <TableHead className="font-semibold text-slate-700 text-right">Ações</TableHead>
+                    {!isCozinha && (
+                      <>
+                        <TableHead className="font-semibold text-slate-700 text-right">
+                          Preço Base de Compra
+                        </TableHead>
+                        <TableHead className="font-semibold text-slate-700 text-right">
+                          Custo no Prato
+                        </TableHead>
+                        <TableHead className="font-semibold text-slate-700 text-right">
+                          % do Custo
+                        </TableHead>
+                        <TableHead className="font-semibold text-slate-700 text-right">
+                          Ações
+                        </TableHead>
+                      </>
+                    )}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1340,7 +1390,7 @@ export default function FichaDetalhe() {
                                 </Badge>
                               )}
                             </div>
-                            {hasRed && (
+                            {hasRed && !isCozinha && (
                               <span className="block text-[11px] text-amber-700 font-medium">
                                 Perda de {ing.reduction_percent}% no preparo
                               </span>
@@ -1361,56 +1411,64 @@ export default function FichaDetalhe() {
                             {item.unit}
                           </span>
                         </TableCell>
-                        <TableCell className="text-right text-slate-600 text-sm">
-                          {ing ? (
-                            hasRed ? (
-                              <div>
-                                <span className="font-bold text-amber-900">
-                                  {formatCurrency(effPrice)}
-                                </span>
-                                <span className="text-xs text-slate-400 ml-1">/ {ing.unit}</span>
-                                <span className="block text-[10px] text-slate-500">
-                                  Base: {formatCurrency(ing.price)} (+{ing.reduction_percent}%)
-                                </span>
+                        {!isCozinha && (
+                          <>
+                            <TableCell className="text-right text-slate-600 text-sm">
+                              {ing ? (
+                                hasRed ? (
+                                  <div>
+                                    <span className="font-bold text-amber-900">
+                                      {formatCurrency(effPrice)}
+                                    </span>
+                                    <span className="text-xs text-slate-400 ml-1">
+                                      / {ing.unit}
+                                    </span>
+                                    <span className="block text-[10px] text-slate-500">
+                                      Base: {formatCurrency(ing.price)} (+{ing.reduction_percent}%)
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <>
+                                    {formatCurrency(ing.price)}
+                                    <span className="text-xs text-slate-400 ml-1">
+                                      / {ing.unit}
+                                    </span>
+                                  </>
+                                )
+                              ) : (
+                                '-'
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right font-bold text-slate-900">
+                              {formatCurrency(itemCost)}
+                            </TableCell>
+                            <TableCell className="text-right text-xs font-semibold text-slate-600">
+                              {pct.toFixed(1)}%
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => handleOpenEditItem(item)}
+                                  className="h-8 w-8 text-slate-600 hover:text-amber-700 hover:bg-amber-50"
+                                  title="Editar quantidade"
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => setDeletingItemId(item.id)}
+                                  className="h-8 w-8 text-slate-400 hover:text-red-600 hover:bg-red-50"
+                                  title="Remover insumo da ficha"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
                               </div>
-                            ) : (
-                              <>
-                                {formatCurrency(ing.price)}
-                                <span className="text-xs text-slate-400 ml-1">/ {ing.unit}</span>
-                              </>
-                            )
-                          ) : (
-                            '-'
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right font-bold text-slate-900">
-                          {formatCurrency(itemCost)}
-                        </TableCell>
-                        <TableCell className="text-right text-xs font-semibold text-slate-600">
-                          {pct.toFixed(1)}%
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleOpenEditItem(item)}
-                              className="h-8 w-8 text-slate-600 hover:text-amber-700 hover:bg-amber-50"
-                              title="Editar quantidade"
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => setDeletingItemId(item.id)}
-                              className="h-8 w-8 text-slate-400 hover:text-red-600 hover:bg-red-50"
-                              title="Remover insumo da ficha"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </TableCell>
+                            </TableCell>
+                          </>
+                        )}
                       </TableRow>
                     )
                   })}
@@ -1435,7 +1493,7 @@ export default function FichaDetalhe() {
                     Orientações passo a passo para a brigada de cozinha preparar o prato com padrão.
                   </CardDescription>
                 </div>
-                {!isEditingNotes && (
+                {!isEditingNotes && !isCozinha && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -1578,46 +1636,53 @@ export default function FichaDetalhe() {
                           </button>
                         </div>
 
-                        <div className="flex items-center gap-1.5 pt-1">
-                          <label className="flex-1">
-                            <input
-                              type="file"
-                              accept="image/*"
-                              className="hidden"
-                              disabled={uploadingPhoto !== null}
-                              onChange={(e) => {
-                                const file = e.target.files?.[0]
-                                if (file) handleUploadPhoto('photo_1', file)
-                                e.target.value = ''
-                              }}
-                            />
+                        {!isCozinha && (
+                          <div className="flex items-center gap-1.5 pt-1">
+                            <label className="flex-1">
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                disabled={uploadingPhoto !== null}
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0]
+                                  if (file) handleUploadPhoto('photo_1', file)
+                                  e.target.value = ''
+                                }}
+                              />
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={uploadingPhoto !== null}
+                                className="w-full text-xs h-7 pointer-events-none"
+                              >
+                                {uploadingPhoto === 'photo_1' ? (
+                                  <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                                ) : (
+                                  <Upload className="h-3 w-3 mr-1" />
+                                )}
+                                Substituir
+                              </Button>
+                            </label>
                             <Button
                               type="button"
-                              variant="outline"
+                              variant="ghost"
                               size="sm"
                               disabled={uploadingPhoto !== null}
-                              className="w-full text-xs h-7 pointer-events-none"
+                              onClick={() => handleRemovePhoto('photo_1')}
+                              className="text-xs h-7 text-red-600 hover:text-red-700 hover:bg-red-50 px-2"
+                              title="Remover foto"
                             >
-                              {uploadingPhoto === 'photo_1' ? (
-                                <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                              ) : (
-                                <Upload className="h-3 w-3 mr-1" />
-                              )}
-                              Substituir
+                              <Trash2 className="h-3.5 w-3.5" />
                             </Button>
-                          </label>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            disabled={uploadingPhoto !== null}
-                            onClick={() => handleRemovePhoto('photo_1')}
-                            className="text-xs h-7 text-red-600 hover:text-red-700 hover:bg-red-50 px-2"
-                            title="Remover foto"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : isCozinha ? (
+                      <div className="border border-dashed border-slate-200 rounded-lg p-4 flex flex-col items-center justify-center text-center aspect-video text-slate-400">
+                        <ImageIcon className="h-6 w-6 text-slate-300 mb-1" />
+                        <span className="text-xs">Foto 1 não anexada</span>
                       </div>
                     ) : (
                       <label className="border-2 border-dashed border-slate-300 hover:border-amber-400 bg-white rounded-lg p-4 flex flex-col items-center justify-center cursor-pointer transition-colors text-center aspect-video group">
@@ -1692,46 +1757,53 @@ export default function FichaDetalhe() {
                           </button>
                         </div>
 
-                        <div className="flex items-center gap-1.5 pt-1">
-                          <label className="flex-1">
-                            <input
-                              type="file"
-                              accept="image/*"
-                              className="hidden"
-                              disabled={uploadingPhoto !== null}
-                              onChange={(e) => {
-                                const file = e.target.files?.[0]
-                                if (file) handleUploadPhoto('photo_2', file)
-                                e.target.value = ''
-                              }}
-                            />
+                        {!isCozinha && (
+                          <div className="flex items-center gap-1.5 pt-1">
+                            <label className="flex-1">
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                disabled={uploadingPhoto !== null}
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0]
+                                  if (file) handleUploadPhoto('photo_2', file)
+                                  e.target.value = ''
+                                }}
+                              />
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={uploadingPhoto !== null}
+                                className="w-full text-xs h-7 pointer-events-none"
+                              >
+                                {uploadingPhoto === 'photo_2' ? (
+                                  <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                                ) : (
+                                  <Upload className="h-3 w-3 mr-1" />
+                                )}
+                                Substituir
+                              </Button>
+                            </label>
                             <Button
                               type="button"
-                              variant="outline"
+                              variant="ghost"
                               size="sm"
                               disabled={uploadingPhoto !== null}
-                              className="w-full text-xs h-7 pointer-events-none"
+                              onClick={() => handleRemovePhoto('photo_2')}
+                              className="text-xs h-7 text-red-600 hover:text-red-700 hover:bg-red-50 px-2"
+                              title="Remover foto"
                             >
-                              {uploadingPhoto === 'photo_2' ? (
-                                <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                              ) : (
-                                <Upload className="h-3 w-3 mr-1" />
-                              )}
-                              Substituir
+                              <Trash2 className="h-3.5 w-3.5" />
                             </Button>
-                          </label>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            disabled={uploadingPhoto !== null}
-                            onClick={() => handleRemovePhoto('photo_2')}
-                            className="text-xs h-7 text-red-600 hover:text-red-700 hover:bg-red-50 px-2"
-                            title="Remover foto"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : isCozinha ? (
+                      <div className="border border-dashed border-slate-200 rounded-lg p-4 flex flex-col items-center justify-center text-center aspect-video text-slate-400">
+                        <ImageIcon className="h-6 w-6 text-slate-300 mb-1" />
+                        <span className="text-xs">Foto 2 não anexada</span>
                       </div>
                     ) : (
                       <label className="border-2 border-dashed border-slate-300 hover:border-amber-400 bg-white rounded-lg p-4 flex flex-col items-center justify-center cursor-pointer transition-colors text-center aspect-video group">

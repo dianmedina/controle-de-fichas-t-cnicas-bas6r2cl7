@@ -19,19 +19,23 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 export default function Layout() {
-  const { user, logout } = useAuth()
+  const { user, logout, isCozinha, role } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
-  const navItems = [
-    { label: 'Dashboard', path: '/', icon: LayoutDashboard },
-    { label: 'Insumos', path: '/insumos', icon: Boxes },
-    { label: 'Fichas Técnicas', path: '/fichas', icon: ScrollText },
-    { label: 'Vendas & Precificação', path: '/vendas-precificacao', icon: TrendingUp },
-    { label: 'Cadastros', path: '/cadastros', icon: FolderTree },
-    { label: 'Configurações', path: '/configuracoes', icon: Settings },
-  ]
+  // O perfil Cozinha vê APENAS as fichas técnicas e a opção de sair.
+  // O perfil Gestor vê tudo.
+  const navItems = isCozinha
+    ? [{ label: 'Fichas Técnicas', path: '/fichas', icon: ScrollText }]
+    : [
+        { label: 'Dashboard', path: '/', icon: LayoutDashboard },
+        { label: 'Insumos', path: '/insumos', icon: Boxes },
+        { label: 'Fichas Técnicas', path: '/fichas', icon: ScrollText },
+        { label: 'Vendas & Precificação', path: '/vendas-precificacao', icon: TrendingUp },
+        { label: 'Cadastros', path: '/cadastros', icon: FolderTree },
+        { label: 'Configurações', path: '/configuracoes', icon: Settings },
+      ]
 
   const handleLogout = () => {
     logout()
@@ -86,13 +90,30 @@ export default function Layout() {
         <div className="p-4 border-t border-slate-100 bg-slate-50/50">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2.5 min-w-0">
-              <div className="h-9 w-9 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center font-bold text-xs uppercase shrink-0 border border-amber-200">
+              <div
+                className={cn(
+                  'h-9 w-9 rounded-full flex items-center justify-center font-bold text-xs uppercase shrink-0 border',
+                  isCozinha
+                    ? 'bg-blue-100 text-blue-800 border-blue-200'
+                    : 'bg-amber-100 text-amber-800 border-amber-200',
+                )}
+              >
                 <ChefHat className="h-4 w-4" />
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-xs font-semibold text-slate-800 truncate">
-                  {user?.name || 'Chef / Gestor'}
-                </p>
+                <div className="flex items-center gap-1.5">
+                  <p className="text-xs font-semibold text-slate-800 truncate">
+                    {user?.name || (isCozinha ? 'Equipe Cozinha' : 'Chef Gestor')}
+                  </p>
+                  <span
+                    className={cn(
+                      'text-[10px] font-bold px-1.5 py-0.2 rounded uppercase shrink-0',
+                      isCozinha ? 'bg-blue-100 text-blue-800' : 'bg-amber-100 text-amber-900',
+                    )}
+                  >
+                    {isCozinha ? 'Cozinha' : 'Gestor'}
+                  </span>
+                </div>
                 <p className="text-[11px] text-slate-500 truncate">{user?.email}</p>
               </div>
             </div>
@@ -106,6 +127,11 @@ export default function Layout() {
               <LogOut className="h-4 w-4" />
             </Button>
           </div>
+          {isCozinha && (
+            <div className="mt-2 text-[10px] text-blue-700 bg-blue-50/80 px-2 py-1 rounded border border-blue-100">
+              Acesso operacional: fichas técnicas sem exibição de custos.
+            </div>
+          )}
         </div>
       </aside>
 
@@ -164,7 +190,15 @@ export default function Layout() {
             })}
             <div className="pt-3 mt-2 border-t border-slate-100 flex items-center justify-between">
               <div className="text-xs text-slate-600">
-                Logado como: <span className="font-medium">{user?.email}</span>
+                <span className="font-medium">{user?.email}</span>
+                <span
+                  className={cn(
+                    'ml-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded uppercase',
+                    isCozinha ? 'bg-blue-100 text-blue-800' : 'bg-amber-100 text-amber-900',
+                  )}
+                >
+                  {isCozinha ? 'Cozinha' : 'Gestor'}
+                </span>
               </div>
               <Button
                 variant="outline"

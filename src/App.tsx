@@ -34,17 +34,55 @@ const App = () => (
               </ProtectedRoute>
             }
           >
-            <Route path="/" element={<Index />} />
-            <Route path="/insumos" element={<Insumos />} />
+            {/* Rotas que o Cozinha acessa */}
             <Route path="/fichas" element={<FichasTecnicas />} />
             <Route path="/fichas/:id" element={<FichaDetalhe />} />
-            {/* Rota unificada de Vendas & Precificação */}
-            <Route path="/vendas-precificacao" element={<VendasPrecificacao />} />
+
+            {/* Rotas exclusivas de Gestor */}
+            <Route
+              path="/"
+              element={
+                <ProtectedRoute requiredRole="gestor">
+                  <Index />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/insumos"
+              element={
+                <ProtectedRoute requiredRole="gestor">
+                  <Insumos />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/vendas-precificacao"
+              element={
+                <ProtectedRoute requiredRole="gestor">
+                  <VendasPrecificacao />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/cadastros"
+              element={
+                <ProtectedRoute requiredRole="gestor">
+                  <Cadastros />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/configuracoes"
+              element={
+                <ProtectedRoute requiredRole="gestor">
+                  <Configuracoes />
+                </ProtectedRoute>
+              }
+            />
+
             {/* Redirecionamentos para compatibilidade com links antigos */}
             <Route path="/vendas" element={<Navigate to="/vendas-precificacao" replace />} />
             <Route path="/precificacao" element={<Navigate to="/vendas-precificacao" replace />} />
-            <Route path="/cadastros" element={<Cadastros />} />
-            <Route path="/configuracoes" element={<Configuracoes />} />
           </Route>
 
           <Route path="*" element={<NotFound />} />
