@@ -308,6 +308,9 @@ export interface GroupedRecipePreviewItem {
 export interface GroupedRecipePreview {
   recipeName: string
   recipeType: RecipeType
+  rawDetectedType?: string
+  matchedDishType?: DishType
+  dishTypeId?: string
   yieldPortions: number
   sellingPrice: number
   portionDescription?: string
@@ -634,8 +637,37 @@ function parseBlockFormat(matrix: any[][], sheetName: string): RecipeSheetDetect
     const row = matrix[r] || []
     const c0 = normalizeString(String(row[0] || ''))
     if (c0 === 'ficha tecnica' || c0.startsWith('ficha tecnica')) {
-      const name = String(row[1] || '').trim()
-      const portion = String(row[5] || '').trim() // Coluna 6 (índice 5): "PORÇÃO 400G"
+      let name = String(row[1] || '').trim()
+      // Se a coluna 1 estiver vazia ou for o próprio texto do cabeçalho, procura na linha
+      if (!name || normalizeName(name) === 'ficha tecnica') {
+        for (let c = 0; c < row.length; c++) {
+          const val = String(row[c] || '').trim()
+          if (!val) continue
+          const normVal = normalizeName(val)
+          if (
+            normVal !== 'ficha tecnica' &&
+            !normVal.startsWith('porcao') &&
+            !normVal.startsWith('porção') &&
+            !normVal.startsWith('tipo')
+          ) {
+            name = val
+            break
+          }
+        }
+      }
+
+      // Procura descrição de porção na coluna 5 ou em qualquer coluna da linha do cabeçalho
+      let portion = String(row[5] || '').trim()
+      if (!portion) {
+        for (let c = 0; c < row.length; c++) {
+          const val = String(row[c] || '').trim()
+          if (normalizeName(val).includes('porcao') || normalizeName(val).includes('porção')) {
+            portion = val
+            break
+          }
+        }
+      }
+
       rawBlocks.push({
         startRow: r,
         recipeName: name,
@@ -723,6 +755,16 @@ function parseBlockFormat(matrix: any[][], sheetName: string): RecipeSheetDetect
           continue
         }
 
+        // Ignora linhas que são metadados como "Tipo: ...", "Categoria: ..." caso estejam dentro do bloco
+        const normLine = normalizeName(row.map((x) => String(x || '').trim()).join(' '))
+        if (
+          normLine.startsWith('tipo') ||
+          normLine.startsWith('categoria') ||
+          normLine.startsWith('classificacao')
+        ) {
+          continue
+        }
+
         // Se tem nome de ingrediente
         if (c0) {
           if (rawItems.length === 0 && row[5] !== undefined && row[5] !== '') {
@@ -744,20 +786,104 @@ function parseBlockFormat(matrix: any[][], sheetName: string): RecipeSheetDetect
       currentBlock.portionDesc,
     )
 
-    // Infere tipo da ficha (se tiver no nome "farofa", "arroz", "pure", "legumes", "vinagrete", "salada" pode ser guarnicao,
-    // mas por padrão prato a menos que seja acompanhamento ou o usuário classifique)
+    // Procura declaração explícita de Tipo dentro do bloco:
+    // Ex.: linha "Tipo: GUARNICAO", "Tipo: PRATO PRINCIPAL", célula com "Tipo" e outra com o valor,
+    // linha avulsa "TIPO: SOBREMESA", etc.
+    let detectedTypeRaw: string | undefined
+
+    for (let r = currentBlock.startRow; r < nextStartRow; r++) {
+      const row = matrix[r] || []
+
+      // 1. Verifica se alguma célula tem padrão inline: "Tipo: ...", "Categoria: ..."
+      for (let c = 0; c < row.length; c++) {
+        const cellStr = String(row[c] || '').trim()
+        if (!cellStr) continue
+        const normCell = normalizeName(cellStr)
+
+        // Padrão 1: "Tipo: GUARNICAO", "Tipo - Sobremesa", "Categoria: Prato Principal"
+        const inlineMatch = cellStr.match(
+          /^(?:tipo|categoria|classifica[cç][aã]o)\s*[:\-–—]\s*(.+)$/i,
+        )
+        if (inlineMatch && inlineMatch[1]?.trim()) {
+          detectedTypeRaw = inlineMatch[1].trim()
+          break
+        }
+
+        // Padrão 2: Célula diz apenas "Tipo", "Tipo da Ficha", etc. e a próxima célula traz o valor
+        if (
+          normCell === 'tipo' ||
+          normCell === 'tipo da ficha' ||
+          normCell === 'categoria da ficha' ||
+          normCell === 'tipo de prato'
+        ) {
+          // Procura valor na próxima coluna preenchida da mesma linha
+          for (let nc = c + 1; nc < row.length; nc++) {
+            const nextVal = String(row[nc] || '').trim()
+            if (nextVal) {
+              detectedTypeRaw = nextVal
+              break
+            }
+          }
+          if (detectedTypeRaw) break
+
+          // Ou linha imediatamente abaixo na mesma coluna
+          if (r + 1 < nextStartRow) {
+            const belowVal = String(matrix[r + 1]?.[c] || '').trim()
+            if (belowVal) {
+              detectedTypeRaw = belowVal
+              break
+            }
+          }
+        }
+      }
+      if (detectedTypeRaw) break
+
+      // Padrão 3: Linha avulsa onde o texto da linha inteira começa por tipo/categoria
+      const rowCombined = row
+        .map((cell) => String(cell || '').trim())
+        .filter(Boolean)
+        .join(' ')
+      const rowMatch = rowCombined.match(
+        /^(?:tipo|categoria|classifica[cç][aã]o)\s*[:\-–—]\s*(.+)$/i,
+      )
+      if (rowMatch && rowMatch[1]?.trim()) {
+        detectedTypeRaw = rowMatch[1].trim()
+        break
+      }
+
+      // Padrão 4: Célula única da linha contendo apenas "TIPO GUARNICAO" ou "TIPO PRATO PRINCIPAL" sem dois-pontos
+      const rowNoColonMatch = rowCombined.match(/^(?:tipo|categoria)\s+(.+)$/i)
+      if (rowNoColonMatch && rowNoColonMatch[1]?.trim()) {
+        const candidate = rowNoColonMatch[1].trim()
+        // Garante que não é "tipo da ficha" ou "tipo de prato" sem valor
+        const normCand = normalizeName(candidate)
+        if (normCand !== 'da ficha' && normCand !== 'de prato' && normCand !== 'prato/guarnicao') {
+          detectedTypeRaw = candidate
+          break
+        }
+      }
+    }
+
+    // Infere tipo padrão caso não venha na planilha
     let inferredType: RecipeType = 'prato'
-    const normRecipeName = normalizeString(currentBlock.recipeName)
-    if (
-      normRecipeName.includes('arroz') ||
-      normRecipeName.includes('farofa') ||
-      normRecipeName.includes('pure') ||
-      normRecipeName.includes('legumes') ||
-      normRecipeName.includes('salada') ||
-      normRecipeName.includes('pirao') ||
-      normRecipeName.includes('guarn')
-    ) {
-      inferredType = 'guarnicao'
+    if (detectedTypeRaw) {
+      const normDet = normalizeName(detectedTypeRaw)
+      if (normDet.includes('guarn') || normDet.includes('acompanh')) {
+        inferredType = 'guarnicao'
+      }
+    } else {
+      const normRecipeName = normalizeString(currentBlock.recipeName)
+      if (
+        normRecipeName.includes('arroz') ||
+        normRecipeName.includes('farofa') ||
+        normRecipeName.includes('pure') ||
+        normRecipeName.includes('legumes') ||
+        normRecipeName.includes('salada') ||
+        normRecipeName.includes('pirao') ||
+        normRecipeName.includes('guarn')
+      ) {
+        inferredType = 'guarnicao'
+      }
     }
 
     // Monta itens do bloco
@@ -797,6 +923,7 @@ function parseBlockFormat(matrix: any[][], sheetName: string): RecipeSheetDetect
     blockPreviews.push({
       recipeName: currentBlock.recipeName || '(Sem nome de ficha)',
       recipeType: inferredType,
+      rawDetectedType: detectedTypeRaw,
       yieldPortions: resolvedYield,
       sellingPrice: 0,
       portionDescription: currentBlock.portionDesc,
@@ -953,6 +1080,81 @@ export function validateAndGroupRecipeRows(
     }
   }
 
+  // Função auxiliar para casar tipo de prato e determinar se é guarnição
+  const resolveDishTypeMatch = (
+    rawTypeStr: string | undefined,
+    recipeName: string,
+  ): {
+    matchedDishType?: DishType
+    dishTypeId?: string
+    recipeType: RecipeType
+    warning?: string
+  } => {
+    const trimmed = rawTypeStr ? rawTypeStr.trim() : ''
+    const norm = normalizeName(trimmed)
+
+    if (trimmed && dishTypes && dishTypes.length > 0) {
+      // 1. Procura tipo cadastrado exatamente ou normalizado
+      const matched = dishTypes.find((dt) => {
+        return (
+          areNamesEquivalent(dt.name, trimmed) ||
+          normalizeName(dt.name) === norm ||
+          dt.slug === norm ||
+          dt.id === trimmed
+        )
+      })
+
+      if (matched) {
+        const isGarnish =
+          matched.is_garnish ||
+          matched.slug === 'guarnicao' ||
+          normalizeName(matched.name).includes('guarn') ||
+          normalizeName(matched.name).includes('acompanh')
+        return {
+          matchedDishType: matched,
+          dishTypeId: matched.id,
+          recipeType: isGarnish ? 'guarnicao' : 'prato',
+        }
+      }
+    }
+
+    // Se veio um tipo mas ainda não existe no cadastro (será criado na importação)
+    if (trimmed) {
+      const isGarnish = norm.includes('guarn') || norm.includes('acompanh')
+      return {
+        recipeType: isGarnish ? 'guarnicao' : 'prato',
+      }
+    }
+
+    // Se não veio tipo informado na planilha:
+    // Mantém fallback atual por nome da receita ou 'prato', e adiciona aviso informativo
+    let inferredType: RecipeType = 'prato'
+    const normRecipeName = normalizeString(recipeName)
+    if (
+      normRecipeName.includes('arroz') ||
+      normRecipeName.includes('farofa') ||
+      normRecipeName.includes('pure') ||
+      normRecipeName.includes('legumes') ||
+      normRecipeName.includes('salada') ||
+      normRecipeName.includes('pirao') ||
+      normRecipeName.includes('guarn')
+    ) {
+      inferredType = 'guarnicao'
+    }
+
+    // Tenta associar ao DishType 'prato' ou 'guarnicao' já cadastrado
+    const fallbackDt = dishTypes?.find(
+      (dt) => dt.slug === inferredType || (inferredType === 'guarnicao' && dt.is_garnish),
+    )
+
+    return {
+      matchedDishType: fallbackDt,
+      dishTypeId: fallbackDt?.id,
+      recipeType: inferredType,
+      warning: 'Tipo não especificado na planilha — classificado como padrão.',
+    }
+  }
+
   // 1. Se for formato de blocos:
   if (sheetDetection.format === 'blocks' && sheetDetection.blockPreviews) {
     return sheetDetection.blockPreviews.map((block) => {
@@ -980,6 +1182,12 @@ export function validateAndGroupRecipeRows(
         groupErrors.push('Contém insumos com erros de preenchimento (nome ou quantidade)')
       }
 
+      // Reconcilia tipo da ficha técnica
+      const typeResolution = resolveDishTypeMatch(block.rawDetectedType, block.recipeName)
+      if (typeResolution.warning) {
+        groupWarnings.push(typeResolution.warning)
+      }
+
       // Coleta avisos de insumos a criar, guarnições vinculadas ou não encontradas
       const garnishLinkedCount = reconciledItems.filter((i) => i.itemKind === 'sub_recipe').length
       if (garnishLinkedCount > 0) {
@@ -998,6 +1206,9 @@ export function validateAndGroupRecipeRows(
 
       return {
         ...block,
+        recipeType: typeResolution.recipeType,
+        matchedDishType: typeResolution.matchedDishType,
+        dishTypeId: typeResolution.dishTypeId,
         items: reconciledItems,
         matchedExistingRecipe: matchedExisting,
         isUpdate: !!matchedExisting,
@@ -1024,14 +1235,13 @@ export function validateAndGroupRecipeRows(
     const normRecipeName = normalizeName(rawRecipeName)
     const recipeKey = normRecipeName || `__empty_recipe_${index}`
 
-    // Tipo de receita (default: prato)
-    let parsedType: RecipeType = 'prato'
-    if (columnMapping.typeCol && row[columnMapping.typeCol]) {
-      const t = normalizeString(row[columnMapping.typeCol])
-      if (t.includes('guarn') || t.includes('acompanha')) {
-        parsedType = 'guarnicao'
-      }
-    }
+    // Tipo de receita extraído da coluna de tipo
+    const rawRowType =
+      columnMapping.typeCol && row[columnMapping.typeCol]
+        ? String(row[columnMapping.typeCol]).trim()
+        : undefined
+
+    const typeResolution = resolveDishTypeMatch(rawRowType, rawRecipeName)
 
     // Rendimento (default: 1)
     let parsedYield = 1
@@ -1081,7 +1291,10 @@ export function validateAndGroupRecipeRows(
 
       groupsMap.set(recipeKey, {
         recipeName: rawRecipeName || '(Sem nome de ficha)',
-        recipeType: parsedType,
+        recipeType: typeResolution.recipeType,
+        rawDetectedType: rawRowType,
+        matchedDishType: typeResolution.matchedDishType,
+        dishTypeId: typeResolution.dishTypeId,
         yieldPortions: parsedYield,
         sellingPrice: parsedPrice,
         portionDescription: rawPortionText || undefined,
@@ -1094,7 +1307,7 @@ export function validateAndGroupRecipeRows(
         isUpdate: !!matchedExisting,
         isValid: true,
         errors: [],
-        warnings: [],
+        warnings: typeResolution.warning ? [typeResolution.warning] : [],
       })
     }
 
@@ -1108,6 +1321,12 @@ export function validateAndGroupRecipeRows(
       group.portionSizeValue = extractedPortion.value
       group.portionSizeUnit = extractedPortion.unit
       if (!group.portionDescription) group.portionDescription = rawPortionText
+    }
+    if (!group.rawDetectedType && rawRowType) {
+      group.rawDetectedType = rawRowType
+      group.recipeType = typeResolution.recipeType
+      group.matchedDishType = typeResolution.matchedDishType
+      group.dishTypeId = typeResolution.dishTypeId
     }
 
     // Validação e reconciliação do item usando reconcileItem
@@ -1189,6 +1408,7 @@ export function downloadRecipesTemplate(
     ['Mão de Obra (R$/min)', 0.2, '', '', '', ''],
     ['Agua (R$/ml)', 0.045, '', '', '', ''],
     ['FICHA TECNICA', 'ARROZ GRANDE', '', '', '', 'PORÇÃO 400G'],
+    ['Tipo: GUARNICAO', '', '', '', '', ''],
     ['Ingrediente', 'Qtd', 'Unid.', 'Preço Unit. (R$)', 'Custo (R$)', 'Rendimento / Porções'],
     [ing1, 1.5, 'kg', '', '', 6],
     [ing2, 30, 'mL', '', '', ''],
@@ -1199,6 +1419,7 @@ export function downloadRecipesTemplate(
     ['Total', '', '', '', '', ''],
     ['', '', '', '', '', ''],
     ['FICHA TECNICA', 'ARROZ PEQUENO', '', '', '', 'PORÇÃO 200G'],
+    ['Tipo: GUARNICAO', '', '', '', '', ''],
     ['Ingrediente', 'Qtd', 'Unid.', 'Preço Unit. (R$)', 'Custo (R$)', 'Rendimento / Porções'],
     [ing1, 1.5, 'kg', '', '', 12],
     [ing2, 30, 'mL', '', '', ''],

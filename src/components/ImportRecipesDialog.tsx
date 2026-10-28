@@ -299,16 +299,31 @@ export function ImportRecipesDialog({
 
       for (const group of groupsToProcess) {
         let recipeId: string
-        const typeRaw = (group.recipeType || 'prato').trim()
-        let linkedTypeId: string | undefined = dishTypeCache[typeRaw.toLowerCase()]
+        // Determina o nome do tipo: se veio rawDetectedType (ex: "GUARNICAO", "APERITIVO"), usa ele;
+        // senão usa o nome do matchedDishType ou o recipeType ('prato' / 'guarnicao')
+        const typeRaw = (
+          group.rawDetectedType?.trim() ||
+          group.matchedDishType?.name ||
+          (group.recipeType === 'guarnicao' ? 'Guarnição' : 'Prato')
+        ).trim()
+
+        const normTypeKey = normalizeName(typeRaw)
+        let linkedTypeId: string | undefined =
+          group.dishTypeId || group.matchedDishType?.id || dishTypeCache[normTypeKey]
+
+        const isGarnishType =
+          group.recipeType === 'guarnicao' ||
+          normTypeKey.includes('guarn') ||
+          normTypeKey.includes('acompanh')
 
         if (!linkedTypeId && typeRaw) {
           try {
-            const isGarnish =
-              typeRaw.toLowerCase().includes('guarni') ||
-              typeRaw.toLowerCase().includes('acompanha')
-            const dtRecord = await dishTypesService.findOrCreate(typeRaw, { is_garnish: isGarnish })
+            const dtRecord = await dishTypesService.findOrCreate(typeRaw, {
+              is_garnish: isGarnishType,
+            })
             linkedTypeId = dtRecord.id
+            dishTypeCache[normTypeKey] = dtRecord.id
+            // Atualiza também com a chave exata
             dishTypeCache[typeRaw.toLowerCase()] = dtRecord.id
           } catch (e) {
             console.warn('Falha ao associar/criar tipo de prato durante importação:', e)
@@ -981,11 +996,48 @@ export function ImportRecipesDialog({
                             </Badge>
                           ) : null}
 
+                          {/* Tipo detectado / associado */}
+                          {group.rawDetectedType ? (
+                            <Badge
+                              variant="outline"
+                              className={`text-[11px] font-medium shrink-0 ${
+                                group.recipeType === 'guarnicao'
+                                  ? 'bg-orange-50 text-orange-900 border-orange-200'
+                                  : 'bg-emerald-50 text-emerald-900 border-emerald-200'
+                              }`}
+                              title={`Tipo extraído da planilha: "${group.rawDetectedType}"${group.matchedDishType ? ` (Casado com cadastro: "${group.matchedDishType.name}")` : ' (Novo tipo a cadastrar)'}`}
+                            >
+                              Tipo: {group.rawDetectedType}
+                              {group.recipeType === 'guarnicao' &&
+                                !group.rawDetectedType.toLowerCase().includes('guarn') && (
+                                  <span className="ml-1 opacity-75">(Guarnição)</span>
+                                )}
+                            </Badge>
+                          ) : group.matchedDishType ? (
+                            <Badge
+                              variant="outline"
+                              className="text-[11px] bg-slate-50 text-slate-700 border-slate-200 font-medium shrink-0"
+                            >
+                              Tipo: {group.matchedDishType.name}
+                            </Badge>
+                          ) : (
+                            <Badge
+                              variant="outline"
+                              className="text-[11px] bg-amber-50/60 text-amber-800 border-amber-200/80 font-normal shrink-0 gap-1"
+                              title="Planilha não declarou o tipo deste bloco. Classificado com o tipo padrão."
+                            >
+                              <Info className="h-3 w-3 text-amber-600" />
+                              Tipo:{' '}
+                              {group.recipeType === 'guarnicao'
+                                ? 'Guarnição (padrão)'
+                                : 'Prato (padrão)'}
+                            </Badge>
+                          )}
+
                           <Badge
                             variant="secondary"
                             className="text-[11px] bg-slate-100 text-slate-700 font-normal shrink-0"
                           >
-                            {group.recipeType === 'prato' ? 'Prato' : 'Guarnição'} •{' '}
                             {group.yieldPortions} {group.yieldPortions === 1 ? 'porção' : 'porções'}
                           </Badge>
 
