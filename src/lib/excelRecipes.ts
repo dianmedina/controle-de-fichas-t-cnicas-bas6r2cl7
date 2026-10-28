@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx'
-import { Ingredient, Recipe, RecipeType, MeasurementUnit } from '@/types/restaurant'
+import { Ingredient, Recipe, RecipeType, MeasurementUnit, DishType } from '@/types/restaurant'
 import { normalizeString } from '@/lib/excelSales'
 import {
   normalizeUnit,
@@ -14,6 +14,194 @@ export interface ParsedPortionSize {
   value: number
   unit: PortionUnit
   rawText: string
+}
+
+/**
+ * Palavras ou abreviações de tamanho que devem ser removidas da comparação de nomes de guarnição.
+ */
+const SIZE_MODIFIER_REGEX =
+  /\b(pequeno|pequena|medio|media|médio|média|grande|gigante|mini|micro|padrao|padrão|\(p\)|\(m\)|\(g\)|\(gg\)|tam\.?\s*[pmg]|p|m|g|gg)\b/gi
+
+/**
+ * Remove identificadores de tamanho do nome da guarnição para busca no cadastro.
+ * Ex.: "Arroz Branco pequena" -> "Arroz Branco", tamanho "pequena"
+ * Ex.: "ARROZ GRANDE grande" -> "ARROZ GRANDE", tamanho "grande"
+ * Retorna o nome sem o tamanho e o modificador de tamanho encontrado.
+ */
+export function stripSizeModifier(name: string): { strippedName: string; sizeModifier?: string } {
+  if (!name) return { strippedName: '' }
+
+  let sizeModifier: string | undefined
+
+  // Primeiro testa sufixos no final da string (o padrão mais comum em cardápios)
+  // ex: "pequena", "pequeno", "grande", "media", "P", "M", "G"
+  const suffixMatch = name.match(
+    /(?:[-\s/,(]+)(pequeno|pequena|m[eé]dio|m[eé]dia|grande|gigante|mini|padr[aã]o|tam\.?\s*[pmg]|gg|p|m|g)[)\s]*$/i,
+  )
+
+  const cleanTrailingSeparators = (str: string): string => {
+    let s = str.trim()
+    while (s.endsWith('-') || s.endsWith(':') || s.endsWith(',') || s.endsWith('/')) {
+      s = s.slice(0, -1).trim()
+    }
+    return s
+  }
+
+  if (suffixMatch) {
+    sizeModifier = suffixMatch[1].trim()
+    const cutPos = suffixMatch.index ?? name.length
+    const stripped = cleanTrailingSeparators(name.slice(0, cutPos))
+    if (stripped) {
+      return { strippedName: stripped, sizeModifier }
+    }
+  }
+
+  // Se não foi sufixo direto, tenta identificar se a última palavra é indicador de tamanho
+  const words = name.trim().split(/\s+/)
+  if (words.length > 1) {
+    const lastWord = words[words.length - 1]
+    const normLast = normalizeName(lastWord)
+    if (
+      [
+        'pequena',
+        'pequeno',
+        'grande',
+        'media',
+        'medio',
+        'mini',
+        'gigante',
+        'p',
+        'm',
+        'g',
+        'gg',
+      ].includes(normLast)
+    ) {
+      sizeModifier = lastWord
+      const stripped = cleanTrailingSeparators(words.slice(0, words.length - 1).join(' '))
+      if (stripped) {
+        return { strippedName: stripped, sizeModifier }
+      }
+    }
+  }
+
+  return { strippedName: name.trim() }
+}
+
+/**
+ * Verifica se uma receita pertence ao tipo guarnição (seja pelo campo `type`,
+ * pelo `type_id` ou pela flag `is_garnish`).
+ */
+export function isGarnishRecipe(recipe: Recipe, dishTypes?: DishType[]): boolean {
+  if (!recipe) return false
+  const rType = normalizeName(recipe.type)
+  if (rType === 'guarnicao' || rType.includes('guarn')) return true
+
+  if (recipe.expand?.type_id?.is_garnish) return true
+  const expandSlug = recipe.expand?.type_id?.slug
+  if (expandSlug && (expandSlug === 'guarnicao' || expandSlug.includes('guarn'))) return true
+
+  if (dishTypes && recipe.type_id) {
+    const dt = dishTypes.find((t) => t.id === recipe.type_id || t.slug === recipe.type_id)
+    if (
+      dt &&
+      (dt.is_garnish || dt.slug === 'guarnicao' || normalizeName(dt.name).includes('guarn'))
+    ) {
+      return true
+    }
+  }
+
+  return false
+}
+
+/**
+ * Analisa o nome de uma linha de ingrediente da planilha para determinar se é referência
+ * a uma guarnição existente ou tentativa de guarnição.
+ *
+ * Exemplos aceitos:
+ * - "Guarnição Arroz Branco pequena" -> guarnição "Arroz Branco", tamanho "pequena"
+ * - "guarnicao ARROZ GRANDE grande" -> guarnição "ARROZ GRANDE", tamanho "grande"
+ * - "Guarnição: Vinagrete" -> guarnição "Vinagrete"
+ * - "Acompanhamento: Farofa de Bacon" -> guarnição "Farofa de Bacon"
+ * - "Guarnição - Purê de Batata" -> guarnição "Purê de Batata"
+ */
+export function detectGarnishReference(
+  rawItemName: string,
+  garnishRecipes: Recipe[],
+): ParsedGarnishInfo {
+  if (!rawItemName || !rawItemName.trim()) {
+    return { isGarnishReference: false }
+  }
+
+  const rawTrimmed = rawItemName.trim()
+
+  // Prefixos comuns de guarnição: "guarnição", "guarnicao", "guarn.", "guarn:", "acompanhamento"
+  const prefixRegex = /^(?:guarni[cç][aã]o|guarn\.?|acompanhamento|acompanha)\s*[:\-–—]?\s*(.+)$/i
+
+  const prefixMatch = rawTrimmed.match(prefixRegex)
+  const hasGarnishPrefix = !!prefixMatch
+
+  // Nome do prato/guarnição após retirar o prefixo (ou o próprio nome se não tiver prefixo)
+  const candidateName = (hasGarnishPrefix ? prefixMatch[1] : rawTrimmed).trim()
+
+  // Extrai eventual modificador de tamanho ("pequena", "grande", "P", "M", etc.)
+  const { strippedName, sizeModifier } = stripSizeModifier(candidateName)
+
+  const normCandidate = normalizeName(candidateName)
+  const normStripped = normalizeName(strippedName)
+
+  // 1. Procura primeiro na coleção de receitas que são do tipo guarnição
+  // Comparação ignorando acentos, maiúsculas/minúsculas e espaços extras
+  const findMatchingGarnish = (targetName: string): Recipe | undefined => {
+    const normTarget = normalizeName(targetName)
+    if (!normTarget) return undefined
+
+    return garnishRecipes.find((g) => {
+      const normG = normalizeName(g.name)
+      if (normG === normTarget || areNamesEquivalent(g.name, targetName)) {
+        return true
+      }
+
+      // Também compara removendo modificadores de tamanho da própria guarnição cadastrada
+      // caso na base esteja "Arroz Branco" e o stripped seja "Arroz Branco"
+      const gStripped = normalizeName(stripSizeModifier(g.name).strippedName)
+      if (gStripped && (gStripped === normTarget || gStripped === normStripped)) {
+        return true
+      }
+
+      return false
+    })
+  }
+
+  // Tenta encontrar usando o nome limpo (sem modificador de tamanho)
+  let matched = findMatchingGarnish(strippedName)
+
+  // Se não achou pelo stripped, tenta pelo candidateName original
+  if (!matched && candidateName !== strippedName) {
+    matched = findMatchingGarnish(candidateName)
+  }
+
+  if (matched) {
+    return {
+      isGarnishReference: true,
+      matchedGarnishRecipe: matched,
+      cleanGarnishName: strippedName,
+      sizeModifier,
+    }
+  }
+
+  // Se teve o prefixo explícito "guarnição:" / "guarnição Arroz..." mas NÃO encontrou
+  // na coleção de guarnições salvas:
+  if (hasGarnishPrefix) {
+    return {
+      isGarnishReference: true, // É referência a guarnição, porém não encontrada
+      unmatchedGarnishName: candidateName,
+      cleanGarnishName: strippedName,
+      sizeModifier,
+    }
+  }
+
+  // Não é referência a guarnição
+  return { isGarnishReference: false }
 }
 
 /**
@@ -64,6 +252,16 @@ export function extractPortionSize(raw?: string): ParsedPortionSize | null {
 
 export type RecipeSpreadsheetFormat = 'tabular' | 'blocks'
 
+export type RecipeItemKind = 'ingredient' | 'sub_recipe'
+
+export interface ParsedGarnishInfo {
+  isGarnishReference: boolean
+  matchedGarnishRecipe?: Recipe
+  cleanGarnishName?: string
+  sizeModifier?: string
+  unmatchedGarnishName?: string
+}
+
 export interface ParsedRecipeItemRow {
   rowIndex: number
   recipeName: string
@@ -81,7 +279,10 @@ export interface ParsedRecipeItemRow {
   originalUnit?: string
   unitWarning?: string
   // Reconciliações
+  itemKind?: RecipeItemKind
   matchedIngredient?: Ingredient
+  matchedSubRecipe?: Recipe
+  sizeModifier?: string
   isMissingIngredient?: boolean
   error?: string
   warning?: string
@@ -94,7 +295,10 @@ export interface GroupedRecipePreviewItem {
   unit: MeasurementUnit
   originalUnit?: string
   unitWarning?: string
+  itemKind?: RecipeItemKind
   matchedIngredient?: Ingredient
+  matchedSubRecipe?: Recipe
+  sizeModifier?: string
   isMissingIngredient?: boolean
   error?: string
   warning?: string
@@ -631,7 +835,124 @@ export function validateAndGroupRecipeRows(
   columnMapping: NonNullable<RecipeSheetDetectionResult['detectedColumns']>,
   existingRecipes: Recipe[],
   existingIngredients: Ingredient[],
+  dishTypes?: DishType[],
 ): GroupedRecipePreview[] {
+  // Separa receitas que são do tipo guarnição para permitir vinculação como sub-ficha
+  const garnishRecipes = existingRecipes.filter((r) => isGarnishRecipe(r, dishTypes))
+
+  // Função interna para reconciliar uma linha de item (seja do bloco ou tabular)
+  const reconcileItem = (item: {
+    rowIndex: number
+    ingredientName: string
+    quantity: number
+    unit: MeasurementUnit
+    originalUnit?: string
+    unitWarning?: string
+    error?: string
+    warning?: string
+  }): GroupedRecipePreviewItem => {
+    const itemErrors: string[] = []
+    const itemWarnings: string[] = []
+    if (item.error) itemErrors.push(item.error)
+    if (item.warning) itemWarnings.push(item.warning)
+
+    // 1. Verifica se a linha refere-se a uma guarnição
+    const garnishDetection = detectGarnishReference(item.ingredientName, garnishRecipes)
+
+    if (garnishDetection.isGarnishReference && garnishDetection.matchedGarnishRecipe) {
+      // Guarnição encontrada no sistema! Vincula como sub_recipe
+      const subRecipe = garnishDetection.matchedGarnishRecipe
+      const garnishQty = typeof item.quantity === 'number' && item.quantity > 0 ? item.quantity : 1
+      const sizeNote = garnishDetection.sizeModifier
+        ? ` (Tamanho: ${garnishDetection.sizeModifier})`
+        : ''
+
+      return {
+        rowIndex: item.rowIndex,
+        ingredientName: item.ingredientName,
+        quantity: garnishQty,
+        unit: 'unidade',
+        originalUnit: item.originalUnit,
+        unitWarning: undefined,
+        itemKind: 'sub_recipe',
+        matchedSubRecipe: subRecipe,
+        sizeModifier: garnishDetection.sizeModifier,
+        matchedIngredient: undefined,
+        isMissingIngredient: false,
+        isValid: itemErrors.length === 0,
+        error: itemErrors.length > 0 ? itemErrors.join(', ') : undefined,
+        warning: itemWarnings.length > 0 ? itemWarnings.join(', ') : undefined,
+      }
+    }
+
+    // 2. Se a linha tem indicação de guarnição mas NÃO foi encontrada no cadastro:
+    // Mantém o comportamento atual (tratar como insumo) e adiciona aviso informativo
+    let unmatchedGarnishWarning: string | undefined
+    if (garnishDetection.isGarnishReference && !garnishDetection.matchedGarnishRecipe) {
+      const gName =
+        garnishDetection.unmatchedGarnishName ||
+        garnishDetection.cleanGarnishName ||
+        item.ingredientName
+      unmatchedGarnishWarning = `Guarnição "${gName}" não encontrada no sistema — importada como insumo.`
+      itemWarnings.push(unmatchedGarnishWarning)
+    }
+
+    // 3. Reconciliação como insumo tradicional
+    const normIngName = normalizeName(item.ingredientName)
+    const matchedIngredient = existingIngredients.find(
+      (ing) =>
+        areNamesEquivalent(ing.name, item.ingredientName) ||
+        normalizeName(ing.name) === normIngName,
+    )
+
+    let isMissingIngredient = false
+    if (!matchedIngredient && item.ingredientName) {
+      isMissingIngredient = true
+      // Em vez de erro bloqueante, insumo faltante gera aviso para criação automática com R$ 0,00
+      itemWarnings.push(`Insumo novo a ser criado com R$ 0,00: "${item.ingredientName}"`)
+    }
+
+    // Verifica compatibilidade de unidade (se já cadastrado)
+    if (matchedIngredient && item.unit) {
+      const ingU = matchedIngredient.unit
+      const isMass = (u: MeasurementUnit) => u === 'kg' || u === 'g'
+      const isVolume = (u: MeasurementUnit) => u === 'L' || u === 'mL'
+      const isCount = (u: MeasurementUnit) => u === 'unidade'
+
+      if (isMass(ingU) && !isMass(item.unit)) {
+        itemWarnings.push(
+          `Unidade na ficha (${item.unit}) difere do insumo (${ingU}); custo proporcional pode exigir ajuste`,
+        )
+      } else if (isVolume(ingU) && !isVolume(item.unit)) {
+        itemWarnings.push(
+          `Unidade na ficha (${item.unit}) difere do insumo (${ingU}); custo proporcional pode exigir ajuste`,
+        )
+      } else if (isCount(ingU) && !isCount(item.unit)) {
+        itemWarnings.push(
+          `Unidade na ficha (${item.unit}) difere do insumo (${ingU}); custo proporcional pode exigir ajuste`,
+        )
+      }
+    }
+
+    const isValid = itemErrors.length === 0
+    return {
+      rowIndex: item.rowIndex,
+      ingredientName: item.ingredientName,
+      quantity: item.quantity,
+      unit: item.unit,
+      originalUnit: item.originalUnit,
+      unitWarning: item.unitWarning,
+      itemKind: 'ingredient',
+      matchedIngredient,
+      matchedSubRecipe: undefined,
+      sizeModifier: garnishDetection.sizeModifier,
+      isMissingIngredient,
+      isValid,
+      error: itemErrors.length > 0 ? itemErrors.join(', ') : undefined,
+      warning: itemWarnings.length > 0 ? itemWarnings.join(', ') : undefined,
+    }
+  }
+
   // 1. Se for formato de blocos:
   if (sheetDetection.format === 'blocks' && sheetDetection.blockPreviews) {
     return sheetDetection.blockPreviews.map((block) => {
@@ -651,70 +972,25 @@ export function validateAndGroupRecipeRows(
         groupErrors.push('Ficha técnica sem ingredientes')
       }
 
-      // Reconcilia cada item com a base de insumos cadastrada
-      const reconciledItems = block.items.map((item) => {
-        const itemErrors: string[] = []
-        const itemWarnings: string[] = []
-        if (item.error) itemErrors.push(item.error)
-        if (item.warning) itemWarnings.push(item.warning)
-
-        const normIngName = normalizeName(item.ingredientName)
-        const matchedIngredient = existingIngredients.find(
-          (ing) =>
-            areNamesEquivalent(ing.name, item.ingredientName) ||
-            normalizeName(ing.name) === normIngName,
-        )
-
-        let isMissingIngredient = false
-        if (!matchedIngredient && item.ingredientName) {
-          isMissingIngredient = true
-          // Em vez de erro bloqueante, insumo faltante gera aviso para criação automática com R$ 0,00
-          itemWarnings.push(`Insumo novo a ser criado com R$ 0,00: "${item.ingredientName}"`)
-        }
-
-        // Verifica compatibilidade de unidade (se já cadastrado)
-        if (matchedIngredient && item.unit) {
-          const ingU = matchedIngredient.unit
-          const isMass = (u: MeasurementUnit) => u === 'kg' || u === 'g'
-          const isVolume = (u: MeasurementUnit) => u === 'L' || u === 'mL'
-          const isCount = (u: MeasurementUnit) => u === 'unidade'
-
-          if (isMass(ingU) && !isMass(item.unit)) {
-            itemWarnings.push(
-              `Unidade na ficha (${item.unit}) difere do insumo (${ingU}); custo proporcional pode exigir ajuste`,
-            )
-          } else if (isVolume(ingU) && !isVolume(item.unit)) {
-            itemWarnings.push(
-              `Unidade na ficha (${item.unit}) difere do insumo (${ingU}); custo proporcional pode exigir ajuste`,
-            )
-          } else if (isCount(ingU) && !isCount(item.unit)) {
-            itemWarnings.push(
-              `Unidade na ficha (${item.unit}) difere do insumo (${ingU}); custo proporcional pode exigir ajuste`,
-            )
-          }
-        }
-
-        const isValid = itemErrors.length === 0
-        return {
-          ...item,
-          matchedIngredient,
-          isMissingIngredient,
-          isValid,
-          error: itemErrors.length > 0 ? itemErrors.join(', ') : undefined,
-          warning: itemWarnings.length > 0 ? itemWarnings.join(', ') : undefined,
-        }
-      })
+      // Reconcilia cada item com a base de insumos ou guarnições
+      const reconciledItems = block.items.map(reconcileItem)
 
       const hasInvalidItem = reconciledItems.some((i) => !i.isValid)
       if (hasInvalidItem) {
         groupErrors.push('Contém insumos com erros de preenchimento (nome ou quantidade)')
       }
 
-      // Coleta avisos de insumos a criar ou unidades normalizadas
+      // Coleta avisos de insumos a criar, guarnições vinculadas ou não encontradas
+      const garnishLinkedCount = reconciledItems.filter((i) => i.itemKind === 'sub_recipe').length
+      if (garnishLinkedCount > 0) {
+        groupWarnings.push(`${garnishLinkedCount} guarnição(ões) vinculada(s) como sub-ficha`)
+      }
+
       const missingCount = reconciledItems.filter((i) => i.isMissingIngredient).length
       if (missingCount > 0) {
         groupWarnings.push(`${missingCount} insumo(s) novo(s) serão criados com preço R$ 0,00`)
       }
+
       const unitWarnings = reconciledItems.filter((i) => i.unitWarning).map((i) => i.unitWarning!)
       if (unitWarnings.length > 0) {
         groupWarnings.push(...Array.from(new Set(unitWarnings)))
@@ -834,83 +1110,27 @@ export function validateAndGroupRecipeRows(
       if (!group.portionDescription) group.portionDescription = rawPortionText
     }
 
-    // Validação do ingrediente
-    const itemErrors: string[] = []
-    const itemWarnings: string[] = []
-    if (!rawIngredientName) {
-      itemErrors.push('Nome do insumo está em branco')
-    }
-
-    // Quantidade com suporte a vírgula brasileira ("0,5", "1.500,50")
-    let parsedQty: number | undefined
-    if (rawQuantity !== undefined && rawQuantity !== null && rawQuantity !== '') {
-      const q = parseNumericValue(rawQuantity)
-      if (q === null || q <= 0) {
-        itemErrors.push('Quantidade deve ser maior que zero')
-      } else {
-        parsedQty = q
-      }
-    } else {
-      itemErrors.push('Quantidade é obrigatória')
-    }
-
-    // Unidade normalizada automaticamente com avisos informativos
+    // Validação e reconciliação do item usando reconcileItem
+    const rawQ = parseNumericValue(rawQuantity)
     const unitDetails = normalizeUnitWithDetails(rawUnit)
-    const parsedUnit = unitDetails.unit
-    if (unitDetails.warning) {
-      itemWarnings.push(unitDetails.warning)
-    }
 
-    // Busca insumo existente (normalização sem acentos)
-    const normIngName = normalizeName(rawIngredientName)
-    const matchedIngredient = existingIngredients.find(
-      (ing) =>
-        areNamesEquivalent(ing.name, rawIngredientName) || normalizeName(ing.name) === normIngName,
-    )
-
-    let isMissingIngredient = false
-    if (!matchedIngredient && rawIngredientName) {
-      isMissingIngredient = true
-      // Insumo faltante vira aviso informativo, não erro bloqueante
-      itemWarnings.push(`Insumo novo a ser criado com R$ 0,00: "${rawIngredientName}"`)
-    }
-
-    if (matchedIngredient && parsedUnit) {
-      const ingU = matchedIngredient.unit
-      const isMass = (u: MeasurementUnit) => u === 'kg' || u === 'g'
-      const isVolume = (u: MeasurementUnit) => u === 'L' || u === 'mL'
-      const isCount = (u: MeasurementUnit) => u === 'unidade'
-
-      if (isMass(ingU) && !isMass(parsedUnit)) {
-        itemWarnings.push(
-          `Unidade na ficha (${parsedUnit}) difere do insumo (${ingU}); custo proporcional pode exigir ajuste`,
-        )
-      } else if (isVolume(ingU) && !isVolume(parsedUnit)) {
-        itemWarnings.push(
-          `Unidade na ficha (${parsedUnit}) difere do insumo (${ingU}); custo proporcional pode exigir ajuste`,
-        )
-      } else if (isCount(ingU) && !isCount(parsedUnit)) {
-        itemWarnings.push(
-          `Unidade na ficha (${parsedUnit}) difere do insumo (${ingU}); custo proporcional pode exigir ajuste`,
-        )
-      }
-    }
-
-    const itemValid = itemErrors.length === 0
-
-    group.items.push({
+    const baseItem = {
       rowIndex: index + 2,
       ingredientName: rawIngredientName,
-      quantity: parsedQty || 0,
-      unit: parsedUnit,
+      quantity: rawQ !== null && rawQ > 0 ? rawQ : 0,
+      unit: unitDetails.unit,
       originalUnit: unitDetails.originalUnit,
       unitWarning: unitDetails.warning,
-      matchedIngredient,
-      isMissingIngredient,
-      error: itemErrors.length > 0 ? itemErrors.join(', ') : undefined,
-      warning: itemWarnings.length > 0 ? itemWarnings.join(', ') : undefined,
-      isValid: itemValid,
-    })
+      error: !rawIngredientName
+        ? 'Nome do insumo está em branco'
+        : rawQ === null || rawQ <= 0
+          ? 'Quantidade deve ser maior que zero'
+          : undefined,
+      warning: undefined,
+    }
+
+    const reconciled = reconcileItem(baseItem)
+    group.items.push(reconciled)
   })
 
   const result = Array.from(groupsMap.values())
@@ -927,6 +1147,11 @@ export function validateAndGroupRecipeRows(
     const hasInvalidItem = group.items.some((i) => !i.isValid)
     if (hasInvalidItem) {
       groupErrors.push('Contém insumos com erros de preenchimento (nome ou quantidade)')
+    }
+
+    const garnishLinkedCount = group.items.filter((i) => i.itemKind === 'sub_recipe').length
+    if (garnishLinkedCount > 0) {
+      groupWarnings.push(`${garnishLinkedCount} guarnição(ões) vinculada(s) como sub-ficha`)
     }
 
     const missingCount = group.items.filter((i) => i.isMissingIngredient).length

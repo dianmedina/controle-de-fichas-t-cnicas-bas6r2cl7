@@ -70,6 +70,7 @@ interface ImportRecipesDialogProps {
   onOpenChange: (open: boolean) => void
   existingRecipes: Recipe[]
   existingIngredients: Ingredient[]
+  dishTypes?: import('@/types/restaurant').DishType[]
   onSuccess: () => void
 }
 
@@ -78,6 +79,7 @@ export function ImportRecipesDialog({
   onOpenChange,
   existingRecipes,
   existingIngredients,
+  dishTypes = [],
   onSuccess,
 }: ImportRecipesDialogProps) {
   const { toast } = useToast()
@@ -152,6 +154,7 @@ export function ImportRecipesDialog({
         initialMapping,
         existingRecipes,
         existingIngredients,
+        dishTypes,
       )
       setPreviewGroups(groups)
 
@@ -191,6 +194,7 @@ export function ImportRecipesDialog({
       updated,
       existingRecipes,
       existingIngredients,
+      dishTypes,
     )
     setPreviewGroups(groups)
   }
@@ -228,9 +232,15 @@ export function ImportRecipesDialog({
       })
 
       // 1. Se autoCreateMissingIngredients estiver ativo, cria primeiro todos os insumos desconhecidos citados
+      // Apenas para itens que NÃO são guarnições vinculadas
       if (autoCreateMissingIngredients) {
         for (const group of groupsToProcess) {
           for (const item of group.items) {
+            if (item.itemKind === 'sub_recipe') {
+              // É guarnição vinculada existente, não cria insumo
+              continue
+            }
+
             const rawName = item.ingredientName?.trim()
             if (!rawName) continue
             const norm = normalizeName(rawName)
@@ -281,6 +291,12 @@ export function ImportRecipesDialog({
       // Cache de tipos de prato para associar/criar automaticamente
       const dishTypeCache: Record<string, string> = {}
 
+      // Carrega itens de todas as receitas existentes para verificação rigorosa de ciclos
+      let currentAllRecipeItems = await recipesService.getAllRecipeItems().catch(() => [])
+
+      let linkedGarnishesSavedCount = 0
+      const cycleWarningsList: string[] = []
+
       for (const group of groupsToProcess) {
         let recipeId: string
         const typeRaw = (group.recipeType || 'prato').trim()
@@ -321,6 +337,9 @@ export function ImportRecipesDialog({
             await recipesService.deleteItem(item.id)
           }
 
+          // Remove itens deletados do cache de itens em memória para cálculo de ciclos
+          currentAllRecipeItems = currentAllRecipeItems.filter((it) => it.recipe_id !== recipeId)
+
           updatedCount++
         } else {
           // Cria nova ficha técnica com o nome exato preservado
@@ -339,21 +358,52 @@ export function ImportRecipesDialog({
           createdCount++
         }
 
-        // Insere os ingredientes da ficha
+        // Insere os itens da ficha (guarnições vinculadas ou insumos)
         for (const item of group.items) {
-          const matched =
-            item.matchedIngredient ||
-            (item.ingredientName
-              ? knownIngredientsMap.get(normalizeName(item.ingredientName))
-              : undefined)
+          if (item.itemKind === 'sub_recipe' && item.matchedSubRecipe) {
+            const subRecipe = item.matchedSubRecipe
 
-          if (matched && item.quantity > 0) {
-            await recipesService.addItem({
+            // Prevenção de dependência circular
+            const wouldCycle = recipesService.wouldCreateCycle(
+              recipeId,
+              subRecipe.id,
+              currentAllRecipeItems,
+            )
+
+            if (wouldCycle) {
+              cycleWarningsList.push(
+                `Guarnição "${subRecipe.name}" não pôde ser vinculada ao prato "${group.recipeName}" pois geraria ciclo.`,
+              )
+              continue
+            }
+
+            const garnishQty =
+              typeof item.quantity === 'number' && item.quantity > 0 ? item.quantity : 1
+
+            const addedSub = await recipesService.addItem({
               recipe_id: recipeId,
-              ingredient_id: matched.id,
-              quantity: item.quantity,
-              unit: item.unit,
+              sub_recipe_id: subRecipe.id,
+              quantity: garnishQty,
+              unit: 'unidade',
             })
+            currentAllRecipeItems.push(addedSub)
+            linkedGarnishesSavedCount++
+          } else {
+            const matched =
+              item.matchedIngredient ||
+              (item.ingredientName
+                ? knownIngredientsMap.get(normalizeName(item.ingredientName))
+                : undefined)
+
+            if (matched && item.quantity > 0) {
+              const addedIng = await recipesService.addItem({
+                recipe_id: recipeId,
+                ingredient_id: matched.id,
+                quantity: item.quantity,
+                unit: item.unit,
+              })
+              currentAllRecipeItems.push(addedIng)
+            }
           }
         }
       }
@@ -362,6 +412,16 @@ export function ImportRecipesDialog({
       const summaryParts: string[] = [
         `${groupsToProcess.length} fichas importadas (${createdCount} novas, ${updatedCount} atualizadas).`,
       ]
+
+      if (linkedGarnishesSavedCount > 0) {
+        summaryParts.push(
+          `${linkedGarnishesSavedCount} guarnição(ões) vinculada(s) como sub-fichas aos pratos.`,
+        )
+      }
+
+      if (cycleWarningsList.length > 0) {
+        summaryParts.push(cycleWarningsList.join(' '))
+      }
 
       if (autoCreatedIngredientsList.length > 0) {
         summaryParts.push(
@@ -403,33 +463,62 @@ export function ImportRecipesDialog({
   const totalItemsCount = previewGroups.reduce((acc, g) => acc + g.items.length, 0)
   const isBlockMode = sheetResult?.format === 'blocks'
 
-  // Estatística de insumos não encontrados para alertar o usuário
+  // Estatística de guarnições vinculadas e não encontradas
+  const linkedGarnishesCount = previewGroups.reduce(
+    (acc, g) => acc + g.items.filter((it) => it.itemKind === 'sub_recipe').length,
+    0,
+  )
+
+  // Estatística de insumos não encontrados para alertar o usuário (excluindo guarnições vinculadas)
   const missingIngredientsSet = new Set<string>()
   previewGroups.forEach((g) => {
     g.items.forEach((it) => {
-      if (!it.matchedIngredient && it.ingredientName) {
+      if (it.itemKind !== 'sub_recipe' && !it.matchedIngredient && it.ingredientName) {
         missingIngredientsSet.add(it.ingredientName)
       }
     })
   })
 
-  // Calcula custo estimado dos insumos pelo sistema para cada grupo
+  // Cache de custo de porção de cada ficha técnica existente (especialmente guarnições)
+  // para compor com precisão o custo da receita importada
+  const recipesMap = new Map<string, Recipe>()
+  existingRecipes.forEach((r) => recipesMap.set(r.id, r))
+
+  // Calcula custo estimado dos itens (insumos + guarnições vinculadas) pelo sistema para cada grupo
   const computeGroupSystemCost = (group: GroupedRecipePreview) => {
     let ingCost = 0
+    let garnishesCost = 0
     let allPriced = true
+
     for (const item of group.items) {
-      if (item.matchedIngredient) {
+      if (item.itemKind === 'sub_recipe' && item.matchedSubRecipe) {
+        // Custo por porção da guarnição vinculada
+        const sub = item.matchedSubRecipe
+        const subItems = (sub as any).items || []
+        // Se a receita tem items embutidos ou cálculo rápido
+        let subPortionCost = 0
+        if (typeof (sub as any).costPerPortion === 'number' && (sub as any).costPerPortion > 0) {
+          subPortionCost = (sub as any).costPerPortion
+        } else {
+          // Calcula a partir do calculatePortionCost do recipesService
+          const calc = recipesService.calculatePortionCost(sub.id, recipesMap, new Map())
+          subPortionCost = calc.portionCost
+        }
+        const gCost = (item.quantity || 1) * subPortionCost
+        garnishesCost += gCost
+      } else if (item.matchedIngredient) {
         const c = calculateItemCost(item.quantity, item.unit, item.matchedIngredient)
         ingCost += c
       } else {
         allPriced = false
       }
     }
+
     const labor = group.laborCost || 0
-    const total = ingCost + labor
+    const total = ingCost + garnishesCost + labor
     const portions = group.yieldPortions > 0 ? group.yieldPortions : 1
     const perPortion = total / portions
-    return { ingCost, labor, total, perPortion, allPriced }
+    return { ingCost, garnishesCost, labor, total, perPortion, allPriced }
   }
 
   return (
@@ -617,6 +706,20 @@ export function ImportRecipesDialog({
                         : 'Apenas fichas com 100% dos insumos cadastrados serão importadas'}
                     </span>
                   </div>
+                </div>
+              )}
+
+              {/* Informação sobre guarnições vinculadas */}
+              {linkedGarnishesCount > 0 && (
+                <div className="p-3 bg-amber-50/70 border border-amber-300 rounded-lg text-xs text-amber-950 flex items-start gap-2">
+                  <CookingPot className="h-4 w-4 text-amber-700 shrink-0 mt-0.5" />
+                  <span className="text-[11px] leading-relaxed">
+                    <strong>Guarnições Detectadas:</strong> Identificamos{' '}
+                    <strong>{linkedGarnishesCount} item(ns)</strong> correspondente(s) a guarnições
+                    já salvas no sistema. Eles serão vinculados diretamente como{' '}
+                    <strong>sub-fichas</strong> do prato, computando suas porções e custos
+                    automaticamente.
+                  </span>
                 </div>
               )}
 
@@ -954,16 +1057,16 @@ export function ImportRecipesDialog({
                                   Linha
                                 </TableHead>
                                 <TableHead className="text-[11px] font-semibold text-slate-700 h-7">
-                                  Insumo Planilha
+                                  Item na Planilha
                                 </TableHead>
                                 <TableHead className="text-[11px] font-semibold text-slate-700 h-7">
-                                  Insumo Reconhecido no Sistema
+                                  Reconhecimento no Sistema
                                 </TableHead>
                                 <TableHead className="text-[11px] font-semibold text-slate-700 text-center h-7">
                                   Qtd / Unidade
                                 </TableHead>
                                 <TableHead className="text-[11px] font-semibold text-slate-700 text-right h-7">
-                                  Preço de Compra
+                                  Preço / Custo Unit.
                                 </TableHead>
                                 <TableHead className="text-[11px] font-semibold text-slate-700 text-right h-7">
                                   Custo Calculado
@@ -975,10 +1078,23 @@ export function ImportRecipesDialog({
                             </TableHeader>
                             <TableBody>
                               {group.items.map((it, idx) => {
+                                const isGarnish = it.itemKind === 'sub_recipe'
+                                const sub = it.matchedSubRecipe
                                 const ing = it.matchedIngredient
-                                const itemCost = ing
-                                  ? calculateItemCost(it.quantity, it.unit, ing)
-                                  : null
+
+                                // Custo do item
+                                let itemCost: number | null = null
+                                if (isGarnish && sub) {
+                                  const calc = recipesService.calculatePortionCost(
+                                    sub.id,
+                                    recipesMap,
+                                    new Map(),
+                                  )
+                                  itemCost = (it.quantity || 1) * calc.portionCost
+                                } else if (ing) {
+                                  itemCost = calculateItemCost(it.quantity, it.unit, ing)
+                                }
+
                                 const effPrice = ing
                                   ? getEffectiveIngredientPrice(ing.price, ing.reduction_percent)
                                   : 0
@@ -989,18 +1105,43 @@ export function ImportRecipesDialog({
                                 return (
                                   <TableRow
                                     key={idx}
-                                    className={it.isValid ? 'hover:bg-white' : 'bg-red-100/50'}
+                                    className={
+                                      !it.isValid
+                                        ? 'bg-red-100/50'
+                                        : isGarnish
+                                          ? 'bg-amber-50/40 hover:bg-amber-50/70'
+                                          : 'hover:bg-white'
+                                    }
                                   >
                                     <TableCell className="text-center text-xs text-slate-500 font-mono py-1.5">
                                       {it.rowIndex}
                                     </TableCell>
                                     <TableCell className="text-xs font-medium text-slate-900 py-1.5">
-                                      {it.ingredientName || (
-                                        <span className="text-slate-400">(vazio)</span>
-                                      )}
+                                      <div className="flex items-center gap-1.5">
+                                        {isGarnish && (
+                                          <CookingPot className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+                                        )}
+                                        <span>
+                                          {it.ingredientName || (
+                                            <span className="text-slate-400">(vazio)</span>
+                                          )}
+                                        </span>
+                                      </div>
                                     </TableCell>
                                     <TableCell className="text-xs py-1.5">
-                                      {ing ? (
+                                      {isGarnish && sub ? (
+                                        <div className="space-y-0.5">
+                                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 font-semibold text-[11px]">
+                                            <CookingPot className="h-3 w-3 text-amber-700" />
+                                            Guarnição vinculada: {sub.name}
+                                          </span>
+                                          {it.sizeModifier && (
+                                            <span className="block text-[10px] text-amber-800 font-medium">
+                                              Tamanho detectado: {it.sizeModifier}
+                                            </span>
+                                          )}
+                                        </div>
+                                      ) : ing ? (
                                         <div>
                                           <span className="text-emerald-800 font-semibold">
                                             {ing.name}{' '}
@@ -1027,9 +1168,15 @@ export function ImportRecipesDialog({
                                       )}
                                     </TableCell>
                                     <TableCell className="text-xs text-center font-bold py-1.5">
-                                      <span>
-                                        {it.quantity} {it.unit}
-                                      </span>
+                                      {isGarnish ? (
+                                        <span>
+                                          {it.quantity} {it.quantity === 1 ? 'porção' : 'porções'}
+                                        </span>
+                                      ) : (
+                                        <span>
+                                          {it.quantity} {it.unit}
+                                        </span>
+                                      )}
                                       {it.originalUnit &&
                                         it.originalUnit.toLowerCase() !== it.unit.toLowerCase() && (
                                           <span
@@ -1041,7 +1188,16 @@ export function ImportRecipesDialog({
                                         )}
                                     </TableCell>
                                     <TableCell className="text-xs text-right text-slate-600 py-1.5">
-                                      {ing ? (
+                                      {isGarnish && sub ? (
+                                        (() => {
+                                          const calc = recipesService.calculatePortionCost(
+                                            sub.id,
+                                            recipesMap,
+                                            new Map(),
+                                          )
+                                          return `${formatCurrency(calc.portionCost)}/porção`
+                                        })()
+                                      ) : ing ? (
                                         hasRed ? (
                                           <span
                                             title={`Base: ${formatCurrency(ing.price)} c/ perda ${ing.reduction_percent}%`}
@@ -1073,6 +1229,11 @@ export function ImportRecipesDialog({
                                             <AlertTriangle className="h-3 w-3 text-amber-600 shrink-0" />
                                             Aviso
                                           </span>
+                                        ) : isGarnish ? (
+                                          <span className="inline-flex items-center gap-1 text-[11px] text-amber-900 font-semibold bg-amber-100/70 px-1.5 py-0.5 rounded">
+                                            <CookingPot className="h-3 w-3 text-amber-700" />{' '}
+                                            Guarnição
+                                          </span>
                                         ) : (
                                           <span className="inline-flex items-center gap-1 text-[11px] text-emerald-700 font-medium">
                                             <CheckCircle2 className="h-3 w-3" /> OK
@@ -1100,6 +1261,12 @@ export function ImportRecipesDialog({
                               <span>
                                 Insumos: <strong>{formatCurrency(cost.ingCost)}</strong>
                               </span>
+                              {cost.garnishesCost > 0 && (
+                                <span>
+                                  + Guarnições:{' '}
+                                  <strong>{formatCurrency(cost.garnishesCost)}</strong>
+                                </span>
+                              )}
                               {group.laborCost !== undefined && (
                                 <span>
                                   + Mão de Obra: <strong>{formatCurrency(group.laborCost)}</strong>

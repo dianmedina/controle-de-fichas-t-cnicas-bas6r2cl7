@@ -921,6 +921,7 @@ export default function FichasTecnicas() {
         onOpenChange={setIsImportOpen}
         existingRecipes={rawRecipes}
         existingIngredients={allIngredients}
+        dishTypes={dishTypes}
         onSuccess={loadData}
       />
     </div>
