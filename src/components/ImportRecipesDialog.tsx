@@ -297,10 +297,19 @@ export function ImportRecipesDialog({
       let linkedGarnishesSavedCount = 0
       const cycleWarningsList: string[] = []
 
+      // Mapa para correlacionar o nome ou id temporário das receitas criadas neste lote com seus IDs reais salvos
+      const savedRecipesByName = new Map<string, Recipe>()
+      existingRecipes.forEach((r) => {
+        savedRecipesByName.set(normalizeName(r.name), r)
+      })
+
+      // FASE 1: Salva ou atualiza os cabeçalhos de todas as fichas técnicas do lote
+      // Ordena garantindo que guarnições sejam salvas primeiro, mas mesmo se não forem,
+      // a amarração dos itens acontecerá na FASE 2 após todas terem IDs no banco!
+      const recipeIdMap = new Map<GroupedRecipePreview, string>()
+
       for (const group of groupsToProcess) {
         let recipeId: string
-        // Determina o nome do tipo: se veio rawDetectedType (ex: "GUARNICAO", "APERITIVO"), usa ele;
-        // senão usa o nome do matchedDishType ou o recipeType ('prato' / 'guarnicao')
         const typeRaw = (
           group.rawDetectedType?.trim() ||
           group.matchedDishType?.name ||
@@ -323,7 +332,6 @@ export function ImportRecipesDialog({
             })
             linkedTypeId = dtRecord.id
             dishTypeCache[normTypeKey] = dtRecord.id
-            // Atualiza também com a chave exata
             dishTypeCache[typeRaw.toLowerCase()] = dtRecord.id
           } catch (e) {
             console.warn('Falha ao associar/criar tipo de prato durante importação:', e)
@@ -332,7 +340,6 @@ export function ImportRecipesDialog({
 
         if (group.matchedExistingRecipe) {
           recipeId = group.matchedExistingRecipe.id
-          // Atualiza dados da ficha existente (sem duplicar!)
           await recipesService.update(recipeId, {
             type: group.recipeType,
             type_id: linkedTypeId || group.matchedExistingRecipe.type_id,
@@ -346,18 +353,21 @@ export function ImportRecipesDialog({
             notes: group.notes,
           } as any)
 
-          // Sincroniza composição: remove itens antigos e insere os novos
+          // Limpa itens antigos da ficha existente
           const currentItems = await recipesService.getItemsByRecipeId(recipeId)
           for (const item of currentItems) {
             await recipesService.deleteItem(item.id)
           }
 
-          // Remove itens deletados do cache de itens em memória para cálculo de ciclos
           currentAllRecipeItems = currentAllRecipeItems.filter((it) => it.recipe_id !== recipeId)
-
           updatedCount++
+          savedRecipesByName.set(normalizeName(group.recipeName), {
+            ...group.matchedExistingRecipe,
+            id: recipeId,
+            name: group.recipeName,
+            type: group.recipeType,
+          } as Recipe)
         } else {
-          // Cria nova ficha técnica com o nome exato preservado
           const newRecipe = await recipesService.create({
             name: group.recipeName,
             type: group.recipeType,
@@ -371,23 +381,38 @@ export function ImportRecipesDialog({
           } as any)
           recipeId = newRecipe.id
           createdCount++
+          savedRecipesByName.set(normalizeName(group.recipeName), newRecipe)
         }
 
-        // Insere os itens da ficha (guarnições vinculadas ou insumos)
+        recipeIdMap.set(group, recipeId)
+      }
+
+      // FASE 2: Insere todos os itens (insumos e guarnições vinculadas).
+      // Agora TODAS as guarnições do arquivo já existem no banco de dados com seus IDs definitivos!
+      for (const group of groupsToProcess) {
+        const recipeId = recipeIdMap.get(group)!
+
         for (const item of group.items) {
           if (item.itemKind === 'sub_recipe' && item.matchedSubRecipe) {
-            const subRecipe = item.matchedSubRecipe
+            // Resolve ID definitivo da guarnição (caso tenha sido criada nesta mesma importação)
+            let realSubRecipe = item.matchedSubRecipe
+            if (realSubRecipe.id.startsWith('batch_recipe_')) {
+              const fromMap = savedRecipesByName.get(normalizeName(realSubRecipe.name))
+              if (fromMap) {
+                realSubRecipe = fromMap
+              }
+            }
 
             // Prevenção de dependência circular
             const wouldCycle = recipesService.wouldCreateCycle(
               recipeId,
-              subRecipe.id,
+              realSubRecipe.id,
               currentAllRecipeItems,
             )
 
             if (wouldCycle) {
               cycleWarningsList.push(
-                `Guarnição "${subRecipe.name}" não pôde ser vinculada ao prato "${group.recipeName}" pois geraria ciclo.`,
+                `Guarnição "${realSubRecipe.name}" não pôde ser vinculada ao prato "${group.recipeName}" pois geraria ciclo.`,
               )
               continue
             }
@@ -397,7 +422,7 @@ export function ImportRecipesDialog({
 
             const addedSub = await recipesService.addItem({
               recipe_id: recipeId,
-              sub_recipe_id: subRecipe.id,
+              sub_recipe_id: realSubRecipe.id,
               quantity: garnishQty,
               unit: 'unidade',
             })

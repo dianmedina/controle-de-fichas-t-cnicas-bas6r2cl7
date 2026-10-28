@@ -377,54 +377,33 @@ function parseNumericValue(val: any): number | null {
 }
 
 /**
- * Heurística para o valor de rendimento da coluna 6:
- * - Se for <= 0 ou nulo -> 1
- * - Se for > 100 (ex: 3400, 1800, 3500), representa o peso total da batelada em gramas/mL
- *   e não o número de porções servidas. Quando a porção for informada (ex: "PORÇÃO 400G"),
- *   calcula o rendimento em porções = batelada / porção (ex: 3400 / 400 = 8.5). Se não der para calcular, 1.
- * - Se for entre 0.1 e 100 -> é o número direto de porções (ex: 6, 12, 5.625, 10.58, 8.75).
+ * Heurística para o valor de rendimento:
+ * REGRA DO NEGÓCIO (Requisito 3):
+ * "O número de porções REAL de cada bloco está na linha SubTotal, na mesma coluna de rendimento
+ * (célula numérica plausível, tipo 6, 12, 5,625, 1). Ignore a coluna de rendimento das linhas de ingrediente;
+ * use apenas a célula numérica da linha SubTotal — e se ela for implausível (ex.: > 1000), não quebre:
+ * trate como sem porções (1 porção padrão) e avise."
  */
-function resolveYieldPortions(
-  subTotalPortionsVal: any,
-  firstIngYieldVal: any,
-  portionDesc?: string,
-): number {
+function resolveYieldPortionsFromSubtotal(subTotalPortionsVal: any): {
+  yieldPortions: number
+  warning?: string
+} {
   const pSub = parseNumericValue(subTotalPortionsVal)
-  if (pSub !== null && pSub > 0) {
-    if (pSub <= 100) {
-      return Math.round(pSub * 1000) / 1000
-    }
-    // Caso seja > 100, pode ter sido registrado o peso em gramas no subtotal por engano
-    if (portionDesc) {
-      const match = portionDesc.match(/(\d+[.,]?\d*)/)
-      if (match) {
-        const grams = parseFloat(match[1].replace(',', '.'))
-        if (grams > 0) {
-          return Math.round((pSub / grams) * 1000) / 1000
-        }
-      }
-    }
-    return Math.round(pSub)
+  if (pSub === null || pSub <= 0) {
+    return { yieldPortions: 1 }
   }
 
-  // Tenta pelo valor da primeira linha de ingrediente se o subtotal não tiver
-  const pFirst = parseNumericValue(firstIngYieldVal)
-  if (pFirst !== null && pFirst > 0) {
-    if (pFirst <= 100) {
-      return Math.round(pFirst * 1000) / 1000
-    }
-    if (portionDesc) {
-      const match = portionDesc.match(/(\d+[.,]?\d*)/)
-      if (match) {
-        const grams = parseFloat(match[1].replace(',', '.'))
-        if (grams > 0) {
-          return Math.round((pFirst / grams) * 1000) / 1000
-        }
-      }
+  // Se for valor implausível (ex.: > 1000 ou peso solto sem sentido)
+  if (pSub > 1000) {
+    return {
+      yieldPortions: 1,
+      warning: `Rendimento informado no SubTotal (${pSub}) é implausível (> 1000); assumido 1 porção.`,
     }
   }
 
-  return 1
+  return {
+    yieldPortions: Math.round(pSub * 1000) / 1000,
+  }
 }
 
 /**
@@ -627,20 +606,42 @@ function parseBlockFormat(matrix: any[][], sheetName: string): RecipeSheetDetect
   }
 
   // 2. Identifica os blocos "FICHA TECNICA"
-  const rawBlocks: {
+  // REGRA DO NEGÓCIO (Requisito 2):
+  // (a) Reconhecer bloco por padrão "FICHA TECNICA" na coluna 1, mesmo sem dois-pontos ou com traço
+  // (b) Extrair o tipo do sufixo após o hífen: "FICHA TECNICA - GUARNIÇÃO" -> tipo "GUARNIÇÃO"
+  // (c) Pegar o nome da segunda célula (coluna 2, ex: "ARROZ GRANDE")
+  // (d) Parsear "PORÇÃO XXXG" da linha do cabeçalho do bloco
+  interface RawBlockHeader {
     startRow: number
     recipeName: string
+    titleSuffixType?: string
     portionDesc?: string
-  }[] = []
+  }
+  const rawBlocks: RawBlockHeader[] = []
 
   for (let r = 0; r < matrix.length; r++) {
     const row = matrix[r] || []
-    const c0 = normalizeString(String(row[0] || ''))
-    if (c0 === 'ficha tecnica' || c0.startsWith('ficha tecnica')) {
+    const cell0Str = String(row[0] || '').trim()
+    const norm0 = normalizeString(cell0Str)
+
+    // Cabeçalho de bloco: primeira célula contém ou inicia por "FICHA TECNICA"
+    // Não confunda com linhas globais como "Mão de Obra (R$/min)" ou "Agua (R$/ml)"
+    if (norm0.includes('ficha tecnica')) {
+      // Extrai sufixo após hífen ou traço, se existir
+      // Ex: "FICHA TECNICA - GUARNIÇÃO" -> "GUARNIÇÃO"
+      // Ex: "FICHA TECNICA - PRATO PRINCIPAL" -> "PRATO PRINCIPAL"
+      let suffixType: string | undefined
+      const hyphenMatch = cell0Str.match(/ficha\s*t[eé]cnica\s*[-–—:]\s*(.+)$/i)
+      if (hyphenMatch && hyphenMatch[1]?.trim()) {
+        suffixType = hyphenMatch[1].trim()
+      }
+
+      // Nome da ficha técnica: SEGUNDA célula da mesma linha (row[1])
       let name = String(row[1] || '').trim()
-      // Se a coluna 1 estiver vazia ou for o próprio texto do cabeçalho, procura na linha
+
+      // Se a segunda célula estiver vazia ou com texto de ficha tecnica, procura em outras colunas
       if (!name || normalizeName(name) === 'ficha tecnica') {
-        for (let c = 0; c < row.length; c++) {
+        for (let c = 1; c < row.length; c++) {
           const val = String(row[c] || '').trim()
           if (!val) continue
           const normVal = normalizeName(val)
@@ -648,7 +649,8 @@ function parseBlockFormat(matrix: any[][], sheetName: string): RecipeSheetDetect
             normVal !== 'ficha tecnica' &&
             !normVal.startsWith('porcao') &&
             !normVal.startsWith('porção') &&
-            !normVal.startsWith('tipo')
+            !normVal.startsWith('tipo') &&
+            normVal !== normalizeName(suffixType || '')
           ) {
             name = val
             break
@@ -656,22 +658,25 @@ function parseBlockFormat(matrix: any[][], sheetName: string): RecipeSheetDetect
         }
       }
 
-      // Procura descrição de porção na coluna 5 ou em qualquer coluna da linha do cabeçalho
-      let portion = String(row[5] || '').trim()
-      if (!portion) {
-        for (let c = 0; c < row.length; c++) {
-          const val = String(row[c] || '').trim()
-          if (normalizeName(val).includes('porcao') || normalizeName(val).includes('porção')) {
-            portion = val
-            break
-          }
+      // Procura descrição de porção (ex: "PORÇÃO 400G") em qualquer célula da linha do cabeçalho
+      let portion: string | undefined
+      for (let c = 0; c < row.length; c++) {
+        const val = String(row[c] || '').trim()
+        if (extractPortionSize(val)) {
+          portion = val
+          break
+        }
+        if (normalizeName(val).includes('porcao') || normalizeName(val).includes('porção')) {
+          portion = val
+          break
         }
       }
 
       rawBlocks.push({
         startRow: r,
         recipeName: name,
-        portionDesc: portion || undefined,
+        titleSuffixType: suffixType,
+        portionDesc: portion,
       })
     }
   }
@@ -684,10 +689,10 @@ function parseBlockFormat(matrix: any[][], sheetName: string): RecipeSheetDetect
     const nextStartRow = b + 1 < rawBlocks.length ? rawBlocks[b + 1].startRow : matrix.length
 
     let subTotalPortionsVal: any = null
-    let firstIngYieldVal: any = null
     let laborMinutes: number | undefined
     let laborRatePerMin: number | undefined
     let laborCost: number | undefined
+    const blockWarnings: string[] = []
 
     interface RawBlockItem {
       rowIndex: number
@@ -716,7 +721,8 @@ function parseBlockFormat(matrix: any[][], sheetName: string): RecipeSheetDetect
       // Linha de SubTotal
       if (norm0 === 'subtotal' || norm0.startsWith('subtotal')) {
         inIngredients = false
-        subTotalPortionsVal = row[5] // Coluna 6 (índice 5)
+        // Coluna 6 (índice 5) é onde fica a porção real no SubTotal
+        subTotalPortionsVal = row[5]
         continue
       }
 
@@ -745,13 +751,38 @@ function parseBlockFormat(matrix: any[][], sheetName: string): RecipeSheetDetect
 
       // Se estamos na seção de ingredientes (ou antes de Subtotal)
       if (inIngredients) {
-        // Ignora linhas vazias ou linhas de separador tipo coluna 5 = 0 e coluna 6 = 'porcoes'
-        const c5Val = String(row[4] || '').trim()
-        const c6Val = normalizeString(String(row[5] || ''))
-        if (!c0 && (c5Val === '0' || c5Val === '') && (c6Val === 'porcoes' || c6Val === '')) {
+        // REGRA DO NEGÓCIO (Requisito 4):
+        // Linhas-tampão: células de ingrediente vazias/brancas, custo 0 e/ou rendimento "porcoes".
+        // Devem ser simplesmente puladas, nem virarem ingredientes nem gerarem erro.
+        const c1Val = String(row[1] ?? '').trim()
+        const c2Val = String(row[2] ?? '').trim()
+        const c4Val = String(row[4] ?? '').trim()
+        const c5Val = normalizeString(String(row[5] ?? ''))
+
+        const isBufferLine =
+          !c0 ||
+          (c0 === '' &&
+            (c4Val === '0' || c4Val === '' || c4Val === '#ref!') &&
+            (c5Val === 'porcoes' || c5Val === ''))
+
+        if (isBufferLine && (!c1Val || c1Val === '') && (!c2Val || c2Val === '')) {
           continue
         }
-        if (!c0 && !row[1] && !row[2]) {
+
+        // Se linha inteira não tem nome de ingrediente nem quantidade
+        if (!c0 && !c1Val && !c2Val) {
+          continue
+        }
+
+        // REGRA DO NEGÓCIO (Requisito 5):
+        // Linha com nome "redução" / "reducao" / "perda" (ignorando acentos e caixa) no meio do bloco
+        // NÃO é insumo: é a perda do preparo (ex.: batata frita 0.1).
+        // Ignore com aviso informativo sem gerar ingrediente ou erro.
+        const normIngName = normalizeName(c0)
+        if (normIngName === 'reducao' || normIngName === 'perda' || normIngName === 'quebra') {
+          blockWarnings.push(
+            `Linha de perda/redução no preparo ignorada como insumo: "${c0}" (${c1Val || ''} ${c2Val || ''}).`,
+          )
           continue
         }
 
@@ -767,9 +798,6 @@ function parseBlockFormat(matrix: any[][], sheetName: string): RecipeSheetDetect
 
         // Se tem nome de ingrediente
         if (c0) {
-          if (rawItems.length === 0 && row[5] !== undefined && row[5] !== '') {
-            firstIngYieldVal = row[5]
-          }
           rawItems.push({
             rowIndex: r + 1,
             rawName: c0,
@@ -780,96 +808,76 @@ function parseBlockFormat(matrix: any[][], sheetName: string): RecipeSheetDetect
       }
     }
 
-    const resolvedYield = resolveYieldPortions(
-      subTotalPortionsVal,
-      firstIngYieldVal,
-      currentBlock.portionDesc,
-    )
+    // REGRA DO NEGÓCIO (Requisito 3):
+    // Ignore a coluna de rendimento das linhas de ingrediente;
+    // Use apenas a célula numérica da linha SubTotal
+    const yieldResolution = resolveYieldPortionsFromSubtotal(subTotalPortionsVal)
+    if (yieldResolution.warning) {
+      blockWarnings.push(yieldResolution.warning)
+    }
 
-    // Procura declaração explícita de Tipo dentro do bloco:
-    // Ex.: linha "Tipo: GUARNICAO", "Tipo: PRATO PRINCIPAL", célula com "Tipo" e outra com o valor,
-    // linha avulsa "TIPO: SOBREMESA", etc.
-    let detectedTypeRaw: string | undefined
+    // REGRA DO NEGÓCIO (Requisito 2):
+    // O TIPO da ficha vem primariamente no SUFIXO do título do bloco ("FICHA TECNICA - <TIPO>")
+    // Se não tiver no título, tenta procurar linha "Tipo:" no bloco
+    let detectedTypeRaw: string | undefined = currentBlock.titleSuffixType
 
-    for (let r = currentBlock.startRow; r < nextStartRow; r++) {
-      const row = matrix[r] || []
+    if (!detectedTypeRaw) {
+      for (let r = currentBlock.startRow; r < nextStartRow; r++) {
+        const row = matrix[r] || []
 
-      // 1. Verifica se alguma célula tem padrão inline: "Tipo: ...", "Categoria: ..."
-      for (let c = 0; c < row.length; c++) {
-        const cellStr = String(row[c] || '').trim()
-        if (!cellStr) continue
-        const normCell = normalizeName(cellStr)
+        for (let c = 0; c < row.length; c++) {
+          const cellStr = String(row[c] || '').trim()
+          if (!cellStr) continue
+          const normCell = normalizeName(cellStr)
 
-        // Padrão 1: "Tipo: GUARNICAO", "Tipo - Sobremesa", "Categoria: Prato Principal"
-        const inlineMatch = cellStr.match(
+          const inlineMatch = cellStr.match(
+            /^(?:tipo|categoria|classifica[cç][aã]o)\s*[:\-–—]\s*(.+)$/i,
+          )
+          if (inlineMatch && inlineMatch[1]?.trim()) {
+            detectedTypeRaw = inlineMatch[1].trim()
+            break
+          }
+
+          if (
+            normCell === 'tipo' ||
+            normCell === 'tipo da ficha' ||
+            normCell === 'categoria da ficha' ||
+            normCell === 'tipo de prato'
+          ) {
+            for (let nc = c + 1; nc < row.length; nc++) {
+              const nextVal = String(row[nc] || '').trim()
+              if (nextVal) {
+                detectedTypeRaw = nextVal
+                break
+              }
+            }
+            if (detectedTypeRaw) break
+          }
+        }
+        if (detectedTypeRaw) break
+
+        const rowCombined = row
+          .map((cell) => String(cell || '').trim())
+          .filter(Boolean)
+          .join(' ')
+        const rowMatch = rowCombined.match(
           /^(?:tipo|categoria|classifica[cç][aã]o)\s*[:\-–—]\s*(.+)$/i,
         )
-        if (inlineMatch && inlineMatch[1]?.trim()) {
-          detectedTypeRaw = inlineMatch[1].trim()
-          break
-        }
-
-        // Padrão 2: Célula diz apenas "Tipo", "Tipo da Ficha", etc. e a próxima célula traz o valor
-        if (
-          normCell === 'tipo' ||
-          normCell === 'tipo da ficha' ||
-          normCell === 'categoria da ficha' ||
-          normCell === 'tipo de prato'
-        ) {
-          // Procura valor na próxima coluna preenchida da mesma linha
-          for (let nc = c + 1; nc < row.length; nc++) {
-            const nextVal = String(row[nc] || '').trim()
-            if (nextVal) {
-              detectedTypeRaw = nextVal
-              break
-            }
-          }
-          if (detectedTypeRaw) break
-
-          // Ou linha imediatamente abaixo na mesma coluna
-          if (r + 1 < nextStartRow) {
-            const belowVal = String(matrix[r + 1]?.[c] || '').trim()
-            if (belowVal) {
-              detectedTypeRaw = belowVal
-              break
-            }
-          }
-        }
-      }
-      if (detectedTypeRaw) break
-
-      // Padrão 3: Linha avulsa onde o texto da linha inteira começa por tipo/categoria
-      const rowCombined = row
-        .map((cell) => String(cell || '').trim())
-        .filter(Boolean)
-        .join(' ')
-      const rowMatch = rowCombined.match(
-        /^(?:tipo|categoria|classifica[cç][aã]o)\s*[:\-–—]\s*(.+)$/i,
-      )
-      if (rowMatch && rowMatch[1]?.trim()) {
-        detectedTypeRaw = rowMatch[1].trim()
-        break
-      }
-
-      // Padrão 4: Célula única da linha contendo apenas "TIPO GUARNICAO" ou "TIPO PRATO PRINCIPAL" sem dois-pontos
-      const rowNoColonMatch = rowCombined.match(/^(?:tipo|categoria)\s+(.+)$/i)
-      if (rowNoColonMatch && rowNoColonMatch[1]?.trim()) {
-        const candidate = rowNoColonMatch[1].trim()
-        // Garante que não é "tipo da ficha" ou "tipo de prato" sem valor
-        const normCand = normalizeName(candidate)
-        if (normCand !== 'da ficha' && normCand !== 'de prato' && normCand !== 'prato/guarnicao') {
-          detectedTypeRaw = candidate
+        if (rowMatch && rowMatch[1]?.trim()) {
+          detectedTypeRaw = rowMatch[1].trim()
           break
         }
       }
     }
 
-    // Infere tipo padrão caso não venha na planilha
+    // Determina o tipo de receita ('prato' | 'guarnicao') a partir do tipo detectado
     let inferredType: RecipeType = 'prato'
     if (detectedTypeRaw) {
       const normDet = normalizeName(detectedTypeRaw)
       if (normDet.includes('guarn') || normDet.includes('acompanh')) {
         inferredType = 'guarnicao'
+      } else {
+        inferredType = 'prato'
       }
     } else {
       const normRecipeName = normalizeString(currentBlock.recipeName)
@@ -887,6 +895,9 @@ function parseBlockFormat(matrix: any[][], sheetName: string): RecipeSheetDetect
     }
 
     // Monta itens do bloco
+    // REGRA DO NEGÓCIO (Requisito 9):
+    // Insumos não devem ser bloqueados por falta de cadastro.
+    // Unidades "gr", "uni", "unid.", "ml" são normalizadas.
     const items = rawItems.map((ri) => {
       const q = parseNumericValue(ri.rawQty)
       const unitDetails = normalizeUnitWithDetails(ri.rawUnit)
@@ -924,7 +935,7 @@ function parseBlockFormat(matrix: any[][], sheetName: string): RecipeSheetDetect
       recipeName: currentBlock.recipeName || '(Sem nome de ficha)',
       recipeType: inferredType,
       rawDetectedType: detectedTypeRaw,
-      yieldPortions: resolvedYield,
+      yieldPortions: yieldResolution.yieldPortions,
       sellingPrice: 0,
       portionDescription: currentBlock.portionDesc,
       portionSizeValue: extractedPortion?.value,
@@ -937,7 +948,7 @@ function parseBlockFormat(matrix: any[][], sheetName: string): RecipeSheetDetect
       isUpdate: false,
       isValid: true,
       errors: [],
-      warnings: [],
+      warnings: blockWarnings,
     })
   }
 
@@ -964,8 +975,48 @@ export function validateAndGroupRecipeRows(
   existingIngredients: Ingredient[],
   dishTypes?: DishType[],
 ): GroupedRecipePreview[] {
-  // Separa receitas que são do tipo guarnição para permitir vinculação como sub-ficha
-  const garnishRecipes = existingRecipes.filter((r) => isGarnishRecipe(r, dishTypes))
+  // REGRA DO NEGÓCIO (Requisito 8):
+  // "Blocos de PRATO PRINCIPAL têm linhas 'GUARNICAO <NOME> ...' com quantidade 1 e unidade unid.
+  // A regra é vincular guarnição salva, nunca virar insumo. Como as guarnições DESTE MESMO arquivo
+  // vêm em blocos anteriores, a importação deve processar os blocos em ordem para que as guarnições
+  // já importadas/presentes no mesmo lote fiquem disponíveis para vincular nos pratos principais."
+  //
+  // Criamos uma lista sintética de guarnições conhecidas que combina:
+  // 1. As guarnições já existentes no banco de dados
+  // 2. As receitas do lote atual que foram classificadas como guarnição
+  const combinedGarnishRecipes: Recipe[] = [
+    ...existingRecipes.filter((r) => isGarnishRecipe(r, dishTypes)),
+  ]
+
+  // Se estiver em formato de blocos, pré-cadastra as guarnições do próprio lote na lista
+  if (sheetDetection.format === 'blocks' && sheetDetection.blockPreviews) {
+    sheetDetection.blockPreviews.forEach((b, idx) => {
+      const isBlockGarnish =
+        b.recipeType === 'guarnicao' ||
+        (b.rawDetectedType && normalizeName(b.rawDetectedType).includes('guarn')) ||
+        (b.matchedDishType &&
+          (b.matchedDishType.is_garnish || b.matchedDishType.slug === 'guarnicao'))
+
+      if (isBlockGarnish && b.recipeName) {
+        const alreadyIn = combinedGarnishRecipes.some(
+          (g) =>
+            areNamesEquivalent(g.name, b.recipeName) ||
+            normalizeName(g.name) === normalizeName(b.recipeName),
+        )
+        if (!alreadyIn) {
+          // Receita sintética em memória com id temporário para identificação no lote
+          combinedGarnishRecipes.push({
+            id: `batch_recipe_${idx}`,
+            name: b.recipeName,
+            type: 'guarnicao',
+            yield_portions: b.yieldPortions || 1,
+            selling_price: b.sellingPrice || 0,
+            labor_cost: b.laborCost,
+          } as Recipe)
+        }
+      }
+    })
+  }
 
   // Função interna para reconciliar uma linha de item (seja do bloco ou tabular)
   const reconcileItem = (item: {
@@ -983,16 +1034,13 @@ export function validateAndGroupRecipeRows(
     if (item.error) itemErrors.push(item.error)
     if (item.warning) itemWarnings.push(item.warning)
 
-    // 1. Verifica se a linha refere-se a uma guarnição
-    const garnishDetection = detectGarnishReference(item.ingredientName, garnishRecipes)
+    // 1. Verifica se a linha refere-se a uma guarnição (do banco ou do lote atual)
+    const garnishDetection = detectGarnishReference(item.ingredientName, combinedGarnishRecipes)
 
     if (garnishDetection.isGarnishReference && garnishDetection.matchedGarnishRecipe) {
-      // Guarnição encontrada no sistema! Vincula como sub_recipe
+      // Guarnição encontrada no sistema ou no lote! Vincula como sub_recipe
       const subRecipe = garnishDetection.matchedGarnishRecipe
       const garnishQty = typeof item.quantity === 'number' && item.quantity > 0 ? item.quantity : 1
-      const sizeNote = garnishDetection.sizeModifier
-        ? ` (Tamanho: ${garnishDetection.sizeModifier})`
-        : ''
 
       return {
         rowIndex: item.rowIndex,
@@ -1012,15 +1060,15 @@ export function validateAndGroupRecipeRows(
       }
     }
 
-    // 2. Se a linha tem indicação de guarnição mas NÃO foi encontrada no cadastro:
-    // Mantém o comportamento atual (tratar como insumo) e adiciona aviso informativo
+    // 2. Se a linha tem indicação de guarnição mas NÃO foi encontrada nem no banco nem no lote:
+    // Nunca deve quebrar a importação: trata como insumo a ser criado com R$ 0,00 ou cadastrado
     let unmatchedGarnishWarning: string | undefined
     if (garnishDetection.isGarnishReference && !garnishDetection.matchedGarnishRecipe) {
       const gName =
         garnishDetection.unmatchedGarnishName ||
         garnishDetection.cleanGarnishName ||
         item.ingredientName
-      unmatchedGarnishWarning = `Guarnição "${gName}" não encontrada no sistema — importada como insumo.`
+      unmatchedGarnishWarning = `Guarnição "${gName}" não encontrada no sistema nem no arquivo — importada como insumo.`
       itemWarnings.push(unmatchedGarnishWarning)
     }
 
@@ -1165,7 +1213,8 @@ export function validateAndGroupRecipeRows(
       )
 
       const groupErrors: string[] = []
-      const groupWarnings: string[] = []
+      // Mantém os warnings já identificados no bloco (ex: avisos de perda ignorada, implausível)
+      const groupWarnings: string[] = [...(block.warnings || [])]
 
       if (!block.recipeName || block.recipeName === '(Sem nome de ficha)') {
         groupErrors.push('Nome da ficha técnica não informado')
