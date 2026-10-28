@@ -2,6 +2,7 @@ import * as XLSX from 'xlsx'
 import { Ingredient, Recipe, RecipeType, MeasurementUnit } from '@/types/restaurant'
 import { normalizeString } from '@/lib/excelSales'
 import { normalizeUnit } from '@/lib/excelIngredients'
+import { normalizeName, areNamesEquivalent } from '@/lib/stringUtils'
 
 export type RecipeSpreadsheetFormat = 'tabular' | 'blocks'
 
@@ -529,9 +530,10 @@ export function validateAndGroupRecipeRows(
   // 1. Se for formato de blocos:
   if (sheetDetection.format === 'blocks' && sheetDetection.blockPreviews) {
     return sheetDetection.blockPreviews.map((block) => {
-      const normRecipeName = normalizeString(block.recipeName)
+      const normRecipeName = normalizeName(block.recipeName)
       const matchedExisting = existingRecipes.find(
-        (r) => normalizeString(r.name) === normRecipeName,
+        (r) =>
+          areNamesEquivalent(r.name, block.recipeName) || normalizeName(r.name) === normRecipeName,
       )
 
       const groupErrors: string[] = []
@@ -547,9 +549,11 @@ export function validateAndGroupRecipeRows(
         const itemErrors: string[] = []
         if (item.error) itemErrors.push(item.error)
 
-        const normIngName = normalizeString(item.ingredientName)
+        const normIngName = normalizeName(item.ingredientName)
         const matchedIngredient = existingIngredients.find(
-          (ing) => normalizeString(ing.name) === normIngName,
+          (ing) =>
+            areNamesEquivalent(ing.name, item.ingredientName) ||
+            normalizeName(ing.name) === normIngName,
         )
 
         if (!matchedIngredient && item.ingredientName) {
@@ -610,7 +614,7 @@ export function validateAndGroupRecipeRows(
     // Se a linha estiver totalmente em branco, ignora
     if (!rawRecipeName && !rawIngredientName) return
 
-    const normRecipeName = normalizeString(rawRecipeName)
+    const normRecipeName = normalizeName(rawRecipeName)
     const recipeKey = normRecipeName || `__empty_recipe_${index}`
 
     // Tipo de receita (default: prato)
@@ -657,7 +661,8 @@ export function validateAndGroupRecipeRows(
     // Se o grupo não existe, inicializa
     if (!groupsMap.has(recipeKey)) {
       const matchedExisting = existingRecipes.find(
-        (r) => normalizeString(r.name) === normRecipeName,
+        (r) =>
+          areNamesEquivalent(r.name, rawRecipeName) || normalizeName(r.name) === normRecipeName,
       )
 
       groupsMap.set(recipeKey, {
@@ -707,10 +712,11 @@ export function validateAndGroupRecipeRows(
       itemErrors.push(`Unidade "${rawUnit}" inválida (use kg, g, L, mL ou unidade)`)
     }
 
-    // Busca insumo existente
-    const normIngName = normalizeString(rawIngredientName)
+    // Busca insumo existente (normalização sem acentos)
+    const normIngName = normalizeName(rawIngredientName)
     const matchedIngredient = existingIngredients.find(
-      (ing) => normalizeString(ing.name) === normIngName,
+      (ing) =>
+        areNamesEquivalent(ing.name, rawIngredientName) || normalizeName(ing.name) === normIngName,
     )
 
     if (!matchedIngredient && rawIngredientName) {

@@ -42,6 +42,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { useToast } from '@/hooks/use-toast'
 import { ImportRecipesDialog } from '@/components/ImportRecipesDialog'
+import { normalizeName, areNamesEquivalent } from '@/lib/stringUtils'
 import {
   Plus,
   Search,
@@ -131,17 +132,18 @@ export default function FichasTecnicas() {
   }, [])
 
   const filteredRecipes = useMemo(() => {
-    return recipesWithCost.filter((item) => {
-      const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase())
+    const searchNorm = normalizeName(searchTerm)
+    return recipesWithCost.filter((recipe) => {
+      const matchesSearch = !searchNorm || normalizeName(recipe.name).includes(searchNorm)
       const matchedDishType = dishTypes.find(
-        (dt) => dt.id === item.type_id || dt.slug === item.type,
+        (dt) => dt.id === recipe.type_id || dt.slug === recipe.type,
       )
       const matchesType =
         typeFilter === 'all' ||
-        item.type === typeFilter ||
-        item.type_id === typeFilter ||
-        item.expand?.type_id?.slug === typeFilter ||
-        item.expand?.type_id?.id === typeFilter ||
+        recipe.type === typeFilter ||
+        recipe.type_id === typeFilter ||
+        recipe.expand?.type_id?.slug === typeFilter ||
+        recipe.expand?.type_id?.id === typeFilter ||
         matchedDishType?.slug === typeFilter ||
         matchedDishType?.id === typeFilter
       return matchesSearch && matchesType
@@ -193,6 +195,24 @@ export default function FichasTecnicas() {
 
     try {
       setSaving(true)
+
+      // Verificação de duplicidade de ficha técnica sem acentos
+      const trimmedName = formData.name.trim()
+      const duplicateRecipe = recipesWithCost.find(
+        (r) =>
+          r.id !== editingRecipe?.id &&
+          (areNamesEquivalent(r.name, trimmedName) ||
+            normalizeName(r.name) === normalizeName(trimmedName)),
+      )
+      if (duplicateRecipe) {
+        toast({
+          title: 'Ficha técnica já cadastrada',
+          description: `Já existe uma ficha com nome equivalente: "${duplicateRecipe.name}".`,
+          variant: 'destructive',
+        })
+        setSaving(false)
+        return
+      }
       // Encontra ou associa o type_id correspondente
       let matchedTypeId = dishTypes.find(
         (t) => t.slug === formData.type || t.id === formData.type || t.name === formData.type,

@@ -1,6 +1,7 @@
 import pb from '@/lib/pocketbase/client'
 import { IngredientCategory } from '@/types/restaurant'
 import { toSlug } from './dishTypes'
+import { normalizeName, areNamesEquivalent } from '@/lib/stringUtils'
 
 export const ingredientCategoriesService = {
   async getAll(): Promise<IngredientCategory[]> {
@@ -52,6 +53,20 @@ export const ingredientCategoriesService = {
     const trimmed = name.trim()
     const slug = toSlug(trimmed)
     if (!slug) throw new Error('Nome de categoria inválido')
+
+    // Primeiro busca todas e compara com areNamesEquivalent para não duplicar por causa de acentos
+    try {
+      const all = await this.getAll()
+      const match = all.find(
+        (c) =>
+          c.slug === slug ||
+          areNamesEquivalent(c.name, trimmed) ||
+          normalizeName(c.name) === normalizeName(trimmed),
+      )
+      if (match) return match
+    } catch {
+      // continua para fallback
+    }
 
     try {
       const existing = await pb

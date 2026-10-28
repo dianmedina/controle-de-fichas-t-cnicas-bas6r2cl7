@@ -11,6 +11,8 @@ export function toSlug(str: string): string {
     .replace(/(^-|-$)+/g, '')
 }
 
+import { normalizeName, areNamesEquivalent } from '@/lib/stringUtils'
+
 export const dishTypesService = {
   async getAll(): Promise<DishType[]> {
     return await pb.collection('recipe_types').getFullList<DishType>({
@@ -67,6 +69,19 @@ export const dishTypesService = {
     const trimmed = name.trim()
     const slug = toSlug(trimmed)
     if (!slug) throw new Error('Nome de tipo inválido')
+
+    try {
+      const all = await this.getAll()
+      const match = all.find(
+        (t) =>
+          t.slug === slug ||
+          areNamesEquivalent(t.name, trimmed) ||
+          normalizeName(t.name) === normalizeName(trimmed),
+      )
+      if (match) return match
+    } catch {
+      // fallback
+    }
 
     try {
       const existing = await pb

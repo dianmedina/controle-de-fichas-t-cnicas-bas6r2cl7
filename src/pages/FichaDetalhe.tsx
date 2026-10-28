@@ -79,6 +79,7 @@ import {
   AlertCircle,
 } from 'lucide-react'
 import { PrintableRecipeSheet } from '@/components/PrintableRecipeSheet'
+import { normalizeName, areNamesEquivalent } from '@/lib/stringUtils'
 
 const UNITS: MeasurementUnit[] = ['kg', 'g', 'L', 'mL', 'unidade']
 
@@ -414,10 +415,27 @@ export default function FichaDetalhe() {
   const handleSaveHeader = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!recipe || !id) return
-    if (!headerData.name.trim()) {
+    const trimmedName = headerData.name.trim()
+    if (!trimmedName) {
       toast({
         title: 'Nome obrigatório',
         description: 'Informe o nome do prato.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    // Validação de duplicidade ignorando acentos
+    const duplicate = allRecipes.find(
+      (r) =>
+        r.id !== id &&
+        (areNamesEquivalent(r.name, trimmedName) ||
+          normalizeName(r.name) === normalizeName(trimmedName)),
+    )
+    if (duplicate) {
+      toast({
+        title: 'Nome já utilizado',
+        description: `Já existe outra ficha técnica com nome equivalente: "${duplicate.name}".`,
         variant: 'destructive',
       })
       return

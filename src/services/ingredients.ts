@@ -164,4 +164,115 @@ export const ingredientsService = {
     await pb.collection('ingredients').delete(id)
     return true
   },
+
+  /**
+   * Unifica dois ou mais insumos em um sobrevivente.
+   * 1. Reatribui todos os recipe_items que apontavam para os insumos absorvidos para o sobrevivente;
+   *    Caso a receita já tenha o insumo sobrevivente, soma as quantidades e converte ou remove duplicatas;
+   * 2. Reatribui o histórico de preços (ingredient_price_history) dos insumos absorvidos para o sobrevivente;
+   * 3. Aplica os dados finais escolhidos no insumo sobrevivente;
+   * 4. Deleta com segurança os insumos absorvidos.
+   */
+  async mergeIngredients(params: {
+    survivorId: string
+    absorbedIds: string[]
+    survivorData?: Partial<Omit<Ingredient, 'id' | 'created' | 'updated'>>
+  }): Promise<{
+    survivor: Ingredient
+    reassignedRecipeItemsCount: number
+    reassignedPriceHistoriesCount: number
+    deletedIngredientsCount: number
+  }> {
+    const { survivorId, absorbedIds, survivorData } = params
+    const uniqueAbsorbed = absorbedIds.filter((id) => id && id !== survivorId)
+    if (uniqueAbsorbed.length === 0) {
+      throw new Error('Nenhum insumo absorvido selecionado para unificação.')
+    }
+
+    let reassignedRecipeItemsCount = 0
+    let reassignedPriceHistoriesCount = 0
+    let deletedIngredientsCount = 0
+
+    // Atualiza dados no sobrevivente se informados
+    let survivor: Ingredient
+    if (survivorData && Object.keys(survivorData).length > 0) {
+      survivor = await this.update(
+        survivorId,
+        survivorData,
+        'Dados consolidados na unificação de insumos',
+      )
+    } else {
+      survivor = await this.getById(survivorId)
+    }
+
+    // Processa cada insumo a ser absorvido
+    for (const absorbedId of uniqueAbsorbed) {
+      // 1. Reatribuição de recipe_items
+      const recipeItems = await pb
+        .collection('recipe_items')
+        .getFullList({ filter: `ingredient_id = "${absorbedId}"` })
+
+      for (const item of recipeItems) {
+        try {
+          // Verifica se a mesma receita já tem o insumo sobrevivente
+          const existingItemInSameRecipe = await pb
+            .collection('recipe_items')
+            .getFirstListItem(`recipe_id = "${item.recipe_id}" && ingredient_id = "${survivorId}"`)
+            .catch(() => null)
+
+          if (existingItemInSameRecipe) {
+            // Se as unidades forem iguais, podemos somar a quantidade
+            if (existingItemInSameRecipe.unit === item.unit) {
+              await pb.collection('recipe_items').update(existingItemInSameRecipe.id, {
+                quantity: (existingItemInSameRecipe.quantity || 0) + (item.quantity || 0),
+              })
+            }
+            // Exclui o item duplicado antigo que apontava para o absorvido
+            await pb.collection('recipe_items').delete(item.id)
+          } else {
+            // Reatribui para o sobrevivente
+            await pb.collection('recipe_items').update(item.id, {
+              ingredient_id: survivorId,
+            })
+          }
+          reassignedRecipeItemsCount++
+        } catch (itemErr) {
+          console.error(`Erro ao reatribuir recipe_item ${item.id}:`, itemErr)
+        }
+      }
+
+      // 2. Reatribuição de histórico de preços
+      const priceHistories = await pb
+        .collection('ingredient_price_history')
+        .getFullList({ filter: `ingredient_id = "${absorbedId}"` })
+
+      for (const hist of priceHistories) {
+        try {
+          await pb.collection('ingredient_price_history').update(hist.id, {
+            ingredient_id: survivorId,
+            notes: hist.notes ? `${hist.notes} (importado de unificação)` : 'Histórico unificado',
+          })
+          reassignedPriceHistoriesCount++
+        } catch (histErr) {
+          console.error(`Erro ao reatribuir price_history ${hist.id}:`, histErr)
+        }
+      }
+
+      // 3. Deleta o insumo absorvido após todas as relações serem transferidas
+      try {
+        await pb.collection('ingredients').delete(absorbedId)
+        deletedIngredientsCount++
+      } catch (delErr) {
+        console.error(`Erro ao deletar insumo absorvido ${absorbedId}:`, delErr)
+        throw new Error(`Falha ao remover insumo absorvido ${absorbedId} após reatribuição`)
+      }
+    }
+
+    return {
+      survivor,
+      reassignedRecipeItemsCount,
+      reassignedPriceHistoriesCount,
+      deletedIngredientsCount,
+    }
+  },
 }

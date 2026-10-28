@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react'
 import { dishTypesService } from '@/services/dishTypes'
 import { ingredientCategoriesService } from '@/services/ingredientCategories'
 import { DishType, IngredientCategory } from '@/types/restaurant'
+import { normalizeName, areNamesEquivalent } from '@/lib/stringUtils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -175,6 +176,23 @@ export default function Cadastros() {
     try {
       setSavingDishType(true)
       const sortNum = parseInt(dishTypeForm.sort_order, 10) || 1
+      // Verifica duplicidade por nome ignorando acentos e maiúsculas
+      const duplicateDt = dishTypes.find(
+        (dt) =>
+          dt.id !== editingDishType?.id &&
+          (areNamesEquivalent(dt.name, dishTypeForm.name.trim()) ||
+            normalizeName(dt.name) === normalizeName(dishTypeForm.name.trim())),
+      )
+      if (duplicateDt) {
+        toast({
+          title: 'Tipo de prato já cadastrado',
+          description: `Já existe um tipo com nome equivalente: "${duplicateDt.name}".`,
+          variant: 'destructive',
+        })
+        setSavingDishType(false)
+        return
+      }
+
       if (editingDishType) {
         await dishTypesService.update(editingDishType.id, {
           name: dishTypeForm.name.trim(),
@@ -280,6 +298,23 @@ export default function Cadastros() {
     try {
       setSavingCategory(true)
       const sortNum = parseInt(categoryForm.sort_order, 10) || 1
+      // Verifica duplicidade por categoria ignorando acentos e maiúsculas
+      const duplicateCat = categories.find(
+        (cat) =>
+          cat.id !== editingCategory?.id &&
+          (areNamesEquivalent(cat.name, categoryForm.name.trim()) ||
+            normalizeName(cat.name) === normalizeName(categoryForm.name.trim())),
+      )
+      if (duplicateCat) {
+        toast({
+          title: 'Categoria já cadastrada',
+          description: `Já existe uma categoria com nome equivalente: "${duplicateCat.name}".`,
+          variant: 'destructive',
+        })
+        setSavingCategory(false)
+        return
+      }
+
       if (editingCategory) {
         await ingredientCategoriesService.update(editingCategory.id, {
           name: categoryForm.name.trim(),

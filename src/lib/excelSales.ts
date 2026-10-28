@@ -28,16 +28,11 @@ export interface SheetDetectionResult {
 /**
  * Normaliza strings removendo acentos e convertendo para minúsculas
  */
+export { normalizeName, normalizeAlphaNumeric, areNamesEquivalent } from './stringUtils'
+import { normalizeName, normalizeAlphaNumeric, areNamesEquivalent } from './stringUtils'
+
 export function normalizeString(str: string): string {
-  return (str || '')
-    .toString()
-    .trim()
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
+  return normalizeAlphaNumeric(str)
 }
 
 /**
@@ -45,18 +40,21 @@ export function normalizeString(str: string): string {
  */
 export function findMatchingRecipe(rawName: string, recipes: Recipe[]): Recipe | undefined {
   if (!rawName) return undefined
-  const target = normalizeString(rawName)
-  if (!target) return undefined
+  const targetNorm = normalizeName(rawName)
+  const targetAlpha = normalizeAlphaNumeric(rawName)
+  if (!targetNorm && !targetAlpha) return undefined
 
-  // 1. Match exato normalizado
-  const exact = recipes.find((r) => normalizeString(r.name) === target)
+  // 1. Match exato sem acentos e caixa normalizada
+  const exact = recipes.find(
+    (r) => areNamesEquivalent(r.name, rawName) || normalizeAlphaNumeric(r.name) === targetAlpha,
+  )
   if (exact) return exact
 
   // 2. Um contém o outro (se o tamanho for razoável)
   const partial = recipes.find((r) => {
-    const norm = normalizeString(r.name)
-    if (norm.length < 3 || target.length < 3) return false
-    return norm.includes(target) || target.includes(norm)
+    const norm = normalizeName(r.name)
+    if (norm.length < 3 || targetNorm.length < 3) return false
+    return norm.includes(targetNorm) || targetNorm.includes(norm)
   })
   if (partial) return partial
 

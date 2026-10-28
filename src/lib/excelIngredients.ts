@@ -6,6 +6,7 @@ import {
   getStandardUnitPrice,
 } from '@/types/restaurant'
 import { normalizeString } from '@/lib/excelSales'
+import { normalizeName, areNamesEquivalent } from '@/lib/stringUtils'
 
 export interface ParsedIngredientRow {
   rowIndex: number
@@ -302,7 +303,7 @@ export function validateIngredientRows(
       errors.push('Nome do insumo está vazio')
     }
 
-    const normName = normalizeString(rawName)
+    const normName = normalizeName(rawName)
     if (normName && seenNames.has(normName)) {
       errors.push('Insumo duplicado nesta mesma planilha')
     } else if (normName) {
@@ -315,8 +316,9 @@ export function validateIngredientRows(
       errors.push(`Unidade "${rawUnit}" inválida (use kg, g, L, mL ou unidade)`)
     }
 
-    // Preço bruto informado (da embalagem ou por unidade)
-    let rawParsedPrice: number | undefined
+    // Preço bruto informado (da embalagem ou por unidade).
+    // Se não informado ou 0, aceitamos como 0 (permitindo criação automática e ajuste posterior)
+    let rawParsedPrice: number | undefined = 0
     if (rawPrice !== undefined && rawPrice !== null && rawPrice !== '') {
       let cleaned = String(rawPrice).trim().replace('R$', '').replace(/\s/g, '')
       if (cleaned.includes(',') && cleaned.includes('.')) {
@@ -331,7 +333,7 @@ export function validateIngredientRows(
         rawParsedPrice = p
       }
     } else {
-      errors.push('Preço é obrigatório')
+      rawParsedPrice = 0
     }
 
     // Embalagem (opcional)
@@ -400,9 +402,9 @@ export function validateIngredientRows(
       }
     }
 
-    // Reconciliação com insumos existentes
+    // Reconciliação com insumos existentes (usando normalização sem acentos, case insensitive)
     const matchedExisting = existingIngredients.find(
-      (ing) => normalizeString(ing.name) === normName,
+      (ing) => areNamesEquivalent(ing.name, rawName) || normalizeName(ing.name) === normName,
     )
     const oldEffective = matchedExisting
       ? getEffectiveIngredientPrice(matchedExisting.price, matchedExisting.reduction_percent)

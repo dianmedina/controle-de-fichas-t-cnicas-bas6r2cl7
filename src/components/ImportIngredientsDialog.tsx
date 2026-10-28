@@ -81,6 +81,7 @@ export function ImportIngredientsDialog({
     supplierCol: '',
     minStockCol: '',
   })
+  const [autoCreateNewIngredients, setAutoCreateNewIngredients] = useState(true)
   const [previewRows, setPreviewRows] = useState<ParsedIngredientRow[]>([])
   const [showColumnConfig, setShowColumnConfig] = useState(false)
 
@@ -159,14 +160,21 @@ export function ImportIngredientsDialog({
   }
 
   const handleConfirmImport = async () => {
-    const validRows = previewRows.filter(
-      (r) => r.isValid && r.normalizedName && r.normalizedPrice !== undefined && r.normalizedUnit,
+    const rowsToProcess = previewRows.filter(
+      (r) =>
+        r.isValid &&
+        r.normalizedName &&
+        r.normalizedPrice !== undefined &&
+        r.normalizedUnit &&
+        (r.matchedExisting || autoCreateNewIngredients),
     )
 
-    if (validRows.length === 0) {
+    if (rowsToProcess.length === 0) {
       toast({
-        title: 'Nenhuma linha válida para importar',
-        description: 'Corrija os erros na planilha ou remapeie as colunas correspondentes.',
+        title: 'Nenhum insumo a importar',
+        description: autoCreateNewIngredients
+          ? 'Corrija os erros na planilha ou remapeie as colunas correspondentes.'
+          : 'A opção de criar novos insumos está desmarcada e não há insumos existentes para atualizar.',
         variant: 'destructive',
       })
       return
@@ -180,7 +188,7 @@ export function ImportIngredientsDialog({
       // Cache de categorias para não repetir chamadas de criação
       const categoryCache: Record<string, string> = {}
 
-      for (const row of validRows) {
+      for (const row of rowsToProcess) {
         const catName = (row.normalizedCategory || 'Geral').trim()
         let linkedCategoryId: string | undefined = categoryCache[catName.toLowerCase()]
 
@@ -256,7 +264,7 @@ export function ImportIngredientsDialog({
 
       toast({
         title: 'Importação de insumos concluída!',
-        description: `${validRows.length} insumos processados: ${createdCount} novos cadastros e ${updatedCount} atualizados (com histórico de preço registrado).`,
+        description: `${rowsToProcess.length} insumos processados: ${createdCount} novos cadastros e ${updatedCount} atualizados (com histórico de preço registrado).`,
       })
 
       handleDialogChange(false)
@@ -581,11 +589,34 @@ export function ImportIngredientsDialog({
                 <Info className="h-4 w-4 text-amber-700 shrink-0 mt-0.5" />
                 <span>
                   <strong>Reconciliação e Histórico de Preços:</strong> Se o insumo já estiver
-                  cadastrado, ele será atualizado em vez de duplicado. Caso o preço seja diferente
-                  do preço atual, uma entrada de histórico com data e valor será automaticamente
-                  registrada no sistema.
+                  cadastrado (mesmo com variação de acentos ou maiúsculas), ele será atualizado em
+                  vez de duplicado. Caso o preço seja diferente do preço atual, uma entrada de
+                  histórico com data e valor será automaticamente registrada no sistema.
                 </span>
               </div>
+
+              {/* Opção para criar insumos novos automaticamente */}
+              {newCount > 0 && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <label className="flex items-center gap-2 cursor-pointer text-xs font-medium text-emerald-950">
+                    <input
+                      type="checkbox"
+                      checked={autoCreateNewIngredients}
+                      onChange={(e) => setAutoCreateNewIngredients(e.target.checked)}
+                      className="rounded text-emerald-600 focus:ring-emerald-500 h-4 w-4"
+                    />
+                    <span>
+                      Criar automaticamente os <strong>{newCount}</strong> novos insumos não
+                      encontrados no cadastro
+                    </span>
+                  </label>
+                  <span className="text-[11px] text-emerald-700">
+                    {autoCreateNewIngredients
+                      ? 'Insumos novos serão criados no sistema com as unidades e dados da planilha'
+                      : 'Apenas os insumos existentes serão atualizados'}
+                  </span>
+                </div>
+              )}
 
               {/* Tabela de pré-visualização */}
               <div className="border border-slate-200 rounded-xl overflow-hidden bg-white">

@@ -41,6 +41,8 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { useToast } from '@/hooks/use-toast'
 import { ImportIngredientsDialog } from '@/components/ImportIngredientsDialog'
+import { MergeIngredientsDialog } from '@/components/MergeIngredientsDialog'
+import { normalizeName, areNamesEquivalent } from '@/lib/stringUtils'
 import {
   Plus,
   Search,
@@ -56,6 +58,9 @@ import {
   TrendingDown,
   Minus,
   FileSpreadsheet,
+  GitMerge,
+  CheckSquare,
+  Square,
 } from 'lucide-react'
 
 const UNITS: MeasurementUnit[] = ['kg', 'g', 'L', 'mL', 'unidade']
@@ -83,6 +88,10 @@ export default function Insumos() {
   // Estado do Modal de Confirmação de Exclusão
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
+
+  // Estado para Seleção Múltipla e Unificação (Merge)
+  const [selectedIngredientIds, setSelectedIngredientIds] = useState<string[]>([])
+  const [isMergeDialogOpen, setIsMergeDialogOpen] = useState(false)
 
   // Formulário
   const [formData, setFormData] = useState({
@@ -163,10 +172,12 @@ export default function Insumos() {
   }, [ingredients, availableCategories])
 
   const filteredIngredients = useMemo(() => {
+    const searchNorm = normalizeName(searchTerm)
     return ingredients.filter((ing) => {
       const matchesSearch =
-        ing.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (ing.supplier && ing.supplier.toLowerCase().includes(searchTerm.toLowerCase()))
+        !searchNorm ||
+        normalizeName(ing.name).includes(searchNorm) ||
+        (ing.supplier && normalizeName(ing.supplier).includes(searchNorm))
       const matchesCategory =
         selectedCategory === 'all' ||
         ing.category === selectedCategory ||
@@ -328,6 +339,24 @@ export default function Insumos() {
         console.warn('Erro ao auto-criar/obter categoria:', catErr)
       }
 
+      // Verificação de duplicidade ignorando acentos
+      const trimmedName = formData.name.trim()
+      const duplicateIng = ingredients.find(
+        (i) =>
+          i.id !== editingIngredient?.id &&
+          (areNamesEquivalent(i.name, trimmedName) ||
+            normalizeName(i.name) === normalizeName(trimmedName)),
+      )
+      if (duplicateIng) {
+        toast({
+          title: 'Insumo já cadastrado',
+          description: `Já existe um insumo com nome equivalente: "${duplicateIng.name}".`,
+          variant: 'destructive',
+        })
+        setSaving(false)
+        return
+      }
+
       if (editingIngredient) {
         await ingredientsService.update(editingIngredient.id, {
           name: formData.name.trim(),
@@ -405,18 +434,27 @@ export default function Insumos() {
             fichas técnicas.
           </p>
         </div>
-        <div className="flex items-center gap-2 self-start sm:self-auto">
+        <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+          {selectedIngredientIds.length >= 2 && (
+            <Button
+              onClick={() => setIsMergeDialogOpen(true)}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm flex items-center gap-1.5 text-xs sm:text-sm animate-in fade-in"
+            >
+              <GitMerge className="h-4 w-4" />
+              Unificar ({selectedIngredientIds.length}) Selecionados
+            </Button>
+          )}
           <Button
             variant="outline"
             onClick={() => setIsImportOpen(true)}
-            className="border-amber-300 text-amber-900 hover:bg-amber-50 shadow-xs flex items-center gap-1.5"
+            className="border-amber-300 text-amber-900 hover:bg-amber-50 shadow-xs flex items-center gap-1.5 text-xs sm:text-sm"
           >
             <FileSpreadsheet className="h-4 w-4 text-amber-700" />
             Importar Insumos (.xlsx)
           </Button>
           <Button
             onClick={handleOpenCreate}
-            className="bg-amber-600 hover:bg-amber-700 text-white shadow-sm flex items-center gap-1.5"
+            className="bg-amber-600 hover:bg-amber-700 text-white shadow-sm flex items-center gap-1.5 text-xs sm:text-sm"
           >
             <Plus className="h-4 w-4" />
             Novo Insumo
@@ -538,6 +576,30 @@ export default function Insumos() {
             <Table>
               <TableHeader className="bg-slate-50/75">
                 <TableRow>
+                  <TableHead className="w-10 text-center">
+                    <input
+                      type="checkbox"
+                      title="Selecionar todos os filtrados"
+                      checked={
+                        filteredIngredients.length > 0 &&
+                        filteredIngredients.every((i) => selectedIngredientIds.includes(i.id))
+                      }
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          const idsToAdd = filteredIngredients.map((i) => i.id)
+                          setSelectedIngredientIds(
+                            Array.from(new Set([...selectedIngredientIds, ...idsToAdd])),
+                          )
+                        } else {
+                          const filteredSet = new Set(filteredIngredients.map((i) => i.id))
+                          setSelectedIngredientIds(
+                            selectedIngredientIds.filter((id) => !filteredSet.has(id)),
+                          )
+                        }
+                      }}
+                      className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4 cursor-pointer"
+                    />
+                  </TableHead>
                   <TableHead className="font-semibold text-slate-700">Insumo</TableHead>
                   <TableHead className="font-semibold text-slate-700">Categoria</TableHead>
                   <TableHead className="font-semibold text-slate-700 text-right">
@@ -573,8 +635,31 @@ export default function Insumos() {
                       ? formatPackageInfo(ing.package_size, ing.package_unit)
                       : null
 
+                  const isSelected = selectedIngredientIds.includes(ing.id)
+
                   return (
-                    <TableRow key={ing.id} className="hover:bg-slate-50/50">
+                    <TableRow
+                      key={ing.id}
+                      className={`hover:bg-slate-50/50 transition-colors ${
+                        isSelected ? 'bg-indigo-50/30' : ''
+                      }`}
+                    >
+                      <TableCell className="text-center">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedIngredientIds([...selectedIngredientIds, ing.id])
+                            } else {
+                              setSelectedIngredientIds(
+                                selectedIngredientIds.filter((id) => id !== ing.id),
+                              )
+                            }
+                          }}
+                          className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4 cursor-pointer"
+                        />
+                      </TableCell>
                       <TableCell className="font-medium text-slate-900">
                         <div>
                           <div className="flex items-center gap-1.5 flex-wrap">
@@ -1112,6 +1197,18 @@ export default function Insumos() {
         onOpenChange={setIsImportOpen}
         existingIngredients={ingredients}
         onSuccess={loadIngredients}
+      />
+
+      {/* Modal de Unificação (Merge) de Insumos */}
+      <MergeIngredientsDialog
+        open={isMergeDialogOpen}
+        onOpenChange={setIsMergeDialogOpen}
+        ingredientsToMerge={ingredients.filter((i) => selectedIngredientIds.includes(i.id))}
+        categories={availableCategories}
+        onSuccess={() => {
+          setSelectedIngredientIds([])
+          loadIngredients()
+        }}
       />
 
       {/* Modal Confirmação de Exclusão */}
