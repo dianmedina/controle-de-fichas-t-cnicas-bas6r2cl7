@@ -67,16 +67,20 @@ export interface Recipe {
   updated?: string
 }
 
+export type RecipeItemType = 'ingredient' | 'sub_recipe'
+
 export interface RecipeItem {
   id: string
   recipe_id: string
-  ingredient_id: string
+  ingredient_id?: string
+  sub_recipe_id?: string
   quantity: number
   unit: MeasurementUnit
   created?: string
   updated?: string
   expand?: {
     ingredient_id?: Ingredient
+    sub_recipe_id?: Recipe
   }
 }
 

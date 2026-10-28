@@ -94,7 +94,7 @@ export default function FichasTecnicas() {
 
       const enriched = allRecipes.map((r) => {
         const items = allItems.filter((i) => i.recipe_id === r.id)
-        return recipesService.computeCosts(r, items)
+        return recipesService.computeCosts(r, items, allRecipes, allItems)
       })
 
       setRecipesWithCost(enriched)

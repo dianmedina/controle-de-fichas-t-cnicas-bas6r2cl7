@@ -9,14 +9,20 @@ import {
 } from '@/types/restaurant'
 import { ChefHat, CookingPot, Utensils, Scale, DollarSign, Image as ImageIcon } from 'lucide-react'
 
+import { Recipe, RecipeItem } from '@/types/restaurant'
+
 interface PrintableRecipeSheetProps {
   recipe: RecipeWithCost
   hideCosts?: boolean
+  allRecipes?: Recipe[]
+  allRecipeItems?: RecipeItem[]
 }
 
 export const PrintableRecipeSheet: React.FC<PrintableRecipeSheetProps> = ({
   recipe,
   hideCosts = false,
+  allRecipes = [],
+  allRecipeItems = [],
 }) => {
   const photo1Url = recipe.photo_1 ? recipesService.getPhotoUrl(recipe, recipe.photo_1) : ''
   const photo2Url = recipe.photo_2 ? recipesService.getPhotoUrl(recipe, recipe.photo_2) : ''
@@ -27,6 +33,9 @@ export const PrintableRecipeSheet: React.FC<PrintableRecipeSheetProps> = ({
     month: '2-digit',
     year: 'numeric',
   }).format(new Date())
+
+  const ingredientItems = recipe.items.filter((it) => !it.sub_recipe_id)
+  const garnishItems = recipe.items.filter((it) => !!it.sub_recipe_id)
 
   return (
     <div className="hidden print:block print-page-container font-sans text-slate-900 bg-white leading-tight">
@@ -137,16 +146,123 @@ export const PrintableRecipeSheet: React.FC<PrintableRecipeSheetProps> = ({
 
       {/* Grid de 2 Colunas para caber perfeitamente em 1 página */}
       <div className="grid grid-cols-12 gap-3 items-start">
-        {/* Coluna Esquerda: Ingredientes (e Custos se completo) */}
+        {/* Coluna Esquerda: Guarnições e Ingredientes (e Custos se completo) */}
         <div className="col-span-7 flex flex-col gap-2">
+          {/* Se houver guarnições vinculadas */}
+          {garnishItems.length > 0 && (
+            <div className="border border-amber-300 rounded overflow-hidden">
+              <div className="bg-amber-900 text-white px-2 py-1 flex items-center justify-between text-[11px] font-bold uppercase">
+                <span className="flex items-center gap-1.5">
+                  <Utensils className="h-3.5 w-3.5 text-amber-300" />
+                  Guarnições & Acompanhamentos (Sub-Fichas)
+                </span>
+                <span className="text-[10px] text-amber-200">
+                  {garnishItems.length} componentes
+                </span>
+              </div>
+
+              <table className="w-full text-left text-[11px] border-collapse">
+                <thead>
+                  <tr className="bg-amber-50 border-b border-amber-200 text-[10px] uppercase text-amber-950 font-bold">
+                    <th className="py-1 px-1.5">Guarnição</th>
+                    <th className={`py-1 px-1.5 ${hideCosts ? 'text-right' : 'text-center'}`}>
+                      Qtd. Porções
+                    </th>
+                    {!hideCosts && (
+                      <>
+                        <th className="py-1 px-1.5 text-right">Custo / Porção</th>
+                        <th className="py-1 px-1.5 text-right">Custo no Prato</th>
+                      </>
+                    )}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-amber-100">
+                  {garnishItems.map((item, idx) => {
+                    const subRecipe =
+                      item.expand?.sub_recipe_id ||
+                      allRecipes.find((r) => r.id === item.sub_recipe_id)
+
+                    let garnishPortionCost = 0
+                    if (subRecipe) {
+                      const recipesMap = new Map<string, Recipe>()
+                      allRecipes.forEach((r) => recipesMap.set(r.id, r))
+                      recipesMap.set(subRecipe.id, subRecipe)
+                      const itemsMap = new Map<string, RecipeItem[]>()
+                      allRecipeItems.forEach((it) => {
+                        const list = itemsMap.get(it.recipe_id) || []
+                        list.push(it)
+                        itemsMap.set(it.recipe_id, list)
+                      })
+                      const calc = recipesService.calculatePortionCost(
+                        subRecipe.id,
+                        recipesMap,
+                        itemsMap,
+                        new Set<string>([recipe.id]),
+                      )
+                      garnishPortionCost = calc.portionCost
+                    }
+
+                    const subCost = garnishPortionCost * item.quantity
+
+                    return (
+                      <tr
+                        key={item.id || idx}
+                        className={idx % 2 === 0 ? 'bg-white' : 'bg-amber-50/40'}
+                      >
+                        <td className="py-1 px-1.5 font-semibold text-slate-900 leading-tight">
+                          {subRecipe?.name || 'Guarnição'}
+                          <span className="block text-[9px] text-amber-800 font-normal">
+                            Sub-ficha técnica
+                          </span>
+                        </td>
+                        <td
+                          className={`py-1 px-1.5 font-bold text-slate-800 whitespace-nowrap ${
+                            hideCosts ? 'text-right text-xs' : 'text-center'
+                          }`}
+                        >
+                          {item.quantity}{' '}
+                          <span className="text-[9px] font-semibold text-slate-600">
+                            {item.quantity === 1 ? 'porção' : 'porções'}
+                          </span>
+                        </td>
+                        {!hideCosts && (
+                          <>
+                            <td className="py-1 px-1.5 text-right text-slate-700 text-[10px] whitespace-nowrap">
+                              {formatCurrency(garnishPortionCost)}
+                            </td>
+                            <td className="py-1 px-1.5 text-right font-bold text-slate-950 whitespace-nowrap">
+                              {formatCurrency(subCost)}
+                            </td>
+                          </>
+                        )}
+                      </tr>
+                    )
+                  })}
+                </tbody>
+                {!hideCosts && (
+                  <tfoot>
+                    <tr className="bg-amber-100/70 border-t border-amber-300 text-[10px] font-bold">
+                      <td colSpan={3} className="py-1 px-1.5 uppercase text-amber-950">
+                        Subtotal Guarnições:
+                      </td>
+                      <td className="py-1 px-1.5 text-right text-amber-950 font-extrabold">
+                        {formatCurrency(recipe.garnishesCost || 0)}
+                      </td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+          )}
+
           {/* Tabela de Insumos */}
           <div className="border border-slate-300 rounded overflow-hidden">
             <div className="bg-slate-800 text-white px-2 py-1 flex items-center justify-between text-[11px] font-bold uppercase">
               <span className="flex items-center gap-1.5">
                 <CookingPot className="h-3.5 w-3.5 text-amber-400" />
-                Ingredientes & Quantidades
+                Ingredientes & Insumos Próprios
               </span>
-              <span className="text-[10px] text-slate-300">{recipe.items.length} itens</span>
+              <span className="text-[10px] text-slate-300">{ingredientItems.length} itens</span>
             </div>
 
             <table className="w-full text-left text-[11px] border-collapse">
@@ -166,75 +282,96 @@ export const PrintableRecipeSheet: React.FC<PrintableRecipeSheetProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {recipe.items.map((item, idx) => {
-                  const ing = item.expand?.ingredient_id
-                  const cost = ing ? calculateItemCost(item.quantity, item.unit, ing) : 0
-                  const effPrice = ing
-                    ? getEffectiveIngredientPrice(ing.price, ing.reduction_percent)
-                    : 0
-                  const hasRed = !!(ing?.reduction_percent && ing.reduction_percent > 0)
-
-                  return (
-                    <tr
-                      key={item.id || idx}
-                      className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/70'}
+                {ingredientItems.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={hideCosts ? 2 : 5}
+                      className="py-2 text-center text-slate-400 italic text-[10px]"
                     >
-                      <td className="py-1 px-1.5 font-medium text-slate-900 leading-tight">
-                        {ing?.name || 'Insumo'}
-                        {ing?.category && (
-                          <span className="block text-[9px] text-slate-500 font-normal">
-                            {ing.category}
-                          </span>
-                        )}
-                      </td>
-                      <td
-                        className={`py-1 px-1.5 font-bold text-slate-800 whitespace-nowrap ${hideCosts ? 'text-right text-xs' : 'text-center'}`}
+                      Nenhum ingrediente direto cadastrado.
+                    </td>
+                  </tr>
+                ) : (
+                  ingredientItems.map((item, idx) => {
+                    const ing = item.expand?.ingredient_id
+                    const cost = ing ? calculateItemCost(item.quantity, item.unit, ing) : 0
+                    const effPrice = ing
+                      ? getEffectiveIngredientPrice(ing.price, ing.reduction_percent)
+                      : 0
+                    const hasRed = !!(ing?.reduction_percent && ing.reduction_percent > 0)
+
+                    return (
+                      <tr
+                        key={item.id || idx}
+                        className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/70'}
                       >
-                        {item.quantity}{' '}
-                        <span className="text-[9px] font-semibold text-slate-600">{item.unit}</span>
-                      </td>
-                      {!hideCosts && (
-                        <>
-                          <td className="py-1 px-1 text-right text-slate-500 text-[10px] whitespace-nowrap">
-                            {ing ? `${formatCurrency(ing.price)}/${ing.unit}` : '-'}
-                          </td>
-                          <td className="py-1 px-1 text-right font-medium text-slate-900 text-[10px] whitespace-nowrap">
-                            {ing ? (
-                              hasRed ? (
+                        <td className="py-1 px-1.5 font-medium text-slate-900 leading-tight">
+                          {ing?.name || 'Insumo'}
+                          {ing?.category && (
+                            <span className="block text-[9px] text-slate-500 font-normal">
+                              {ing.category}
+                            </span>
+                          )}
+                        </td>
+                        <td
+                          className={`py-1 px-1.5 font-bold text-slate-800 whitespace-nowrap ${hideCosts ? 'text-right text-xs' : 'text-center'}`}
+                        >
+                          {item.quantity}{' '}
+                          <span className="text-[9px] font-semibold text-slate-600">
+                            {item.unit}
+                          </span>
+                        </td>
+                        {!hideCosts && (
+                          <>
+                            <td className="py-1 px-1 text-right text-slate-500 text-[10px] whitespace-nowrap">
+                              {ing ? `${formatCurrency(ing.price)}/${ing.unit}` : '-'}
+                            </td>
+                            <td className="py-1 px-1 text-right font-medium text-slate-900 text-[10px] whitespace-nowrap">
+                              {ing ? (
                                 <span>
                                   <span className="font-bold text-amber-900">
                                     {formatCurrency(effPrice)}
                                   </span>
-                                  <span className="text-[8px] text-amber-700 ml-0.5">
-                                    (+{ing.reduction_percent}%)
-                                  </span>
+                                  {hasRed && (
+                                    <span className="text-[8px] text-amber-700 ml-0.5">
+                                      (+{ing.reduction_percent}%)
+                                    </span>
+                                  )}
                                 </span>
                               ) : (
-                                `${formatCurrency(effPrice)}/${ing.unit}`
-                              )
-                            ) : (
-                              '-'
-                            )}
-                          </td>
-                          <td className="py-1 px-1.5 text-right font-bold text-slate-950 whitespace-nowrap">
-                            {formatCurrency(cost)}
-                          </td>
-                        </>
-                      )}
-                    </tr>
-                  )
-                })}
+                                '-'
+                              )}
+                            </td>
+                            <td className="py-1 px-1.5 text-right font-bold text-slate-950 whitespace-nowrap">
+                              {formatCurrency(cost)}
+                            </td>
+                          </>
+                        )}
+                      </tr>
+                    )
+                  })
+                )}
               </tbody>
               {!hideCosts ? (
                 <tfoot>
                   <tr className="bg-slate-100 border-t-2 border-slate-300 text-[10px] font-bold">
                     <td colSpan={4} className="py-1 px-1.5 uppercase text-slate-700">
-                      Subtotal Insumos (c/ perdas aplicadas):
+                      Subtotal Insumos Diretos:
                     </td>
                     <td className="py-1 px-1.5 text-right text-slate-900 font-extrabold">
                       {formatCurrency(recipe.ingredientsCost)}
                     </td>
                   </tr>
+                  {recipe.garnishesCost > 0 && (
+                    <tr className="bg-slate-100 border-t border-slate-200 text-[10px] font-bold">
+                      <td colSpan={4} className="py-1 px-1.5 uppercase text-amber-900">
+                        Subtotal Guarnições Inclusas:
+                      </td>
+                      <td className="py-1 px-1.5 text-right text-amber-900 font-extrabold">
+                        {formatCurrency(recipe.garnishesCost)}
+                      </td>
+                    </tr>
+                  )}
                   {recipe.laborCost > 0 && (
                     <tr className="bg-slate-100 border-t border-slate-200 text-[10px] font-bold">
                       <td colSpan={4} className="py-1 px-1.5 uppercase text-slate-700">
@@ -255,9 +392,10 @@ export const PrintableRecipeSheet: React.FC<PrintableRecipeSheetProps> = ({
               ) : (
                 <tfoot>
                   <tr className="bg-slate-100 border-t border-slate-300 text-[10px] font-bold text-slate-700">
-                    <td className="py-1 px-1.5 uppercase">Total de Itens da Receita:</td>
+                    <td className="py-1 px-1.5 uppercase">Total de Itens & Guarnições:</td>
                     <td className="py-1 px-1.5 text-right text-slate-900 font-extrabold">
-                      {recipe.items.length} {recipe.items.length === 1 ? 'insumo' : 'insumos'}
+                      {recipe.items.length}{' '}
+                      {recipe.items.length === 1 ? 'componente' : 'componentes'}
                     </td>
                   </tr>
                 </tfoot>

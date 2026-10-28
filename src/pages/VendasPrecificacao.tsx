@@ -117,7 +117,7 @@ export default function VendasPrecificacao() {
 
       const enriched = recipesData.map((r) => {
         const items = allItems.filter((i) => i.recipe_id === r.id)
-        return recipesService.computeCosts(r, items)
+        return recipesService.computeCosts(r, items, recipesData, allItems)
       })
 
       setSales(salesData)

@@ -42,7 +42,7 @@ export default function Index() {
 
         const enriched = recs.map((r) => {
           const items = allItems.filter((i) => i.recipe_id === r.id)
-          return recipesService.computeCosts(r, items)
+          return recipesService.computeCosts(r, items, recs, allItems)
         })
 
         setIngredients(ings)

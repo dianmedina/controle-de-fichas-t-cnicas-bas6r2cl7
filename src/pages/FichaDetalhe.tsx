@@ -73,6 +73,7 @@ import {
   Eye,
   ChevronDown,
   Users,
+  AlertCircle,
 } from 'lucide-react'
 import { PrintableRecipeSheet } from '@/components/PrintableRecipeSheet'
 
@@ -86,6 +87,8 @@ export default function FichaDetalhe() {
   const [recipe, setRecipe] = useState<Recipe | null>(null)
   const [items, setItems] = useState<RecipeItem[]>([])
   const [allIngredients, setAllIngredients] = useState<Ingredient[]>([])
+  const [allRecipes, setAllRecipes] = useState<Recipe[]>([])
+  const [allRecipeItems, setAllRecipeItems] = useState<RecipeItem[]>([])
   const [loading, setLoading] = useState(true)
 
   // Edição dos dados da Ficha
@@ -103,7 +106,9 @@ export default function FichaDetalhe() {
   // Modal Adicionar / Editar Item
   const [isItemModalOpen, setIsItemModalOpen] = useState(false)
   const [editingItem, setEditingItem] = useState<RecipeItem | null>(null)
+  const [itemKind, setItemKind] = useState<'ingredient' | 'sub_recipe'>('ingredient')
   const [selectedIngredientId, setSelectedIngredientId] = useState<string>('')
+  const [selectedSubRecipeId, setSelectedSubRecipeId] = useState<string>('')
   const [itemQuantity, setItemQuantity] = useState<string>('')
   const [itemUnit, setItemUnit] = useState<MeasurementUnit>('g')
   const [savingItem, setSavingItem] = useState(false)
@@ -127,15 +132,19 @@ export default function FichaDetalhe() {
     if (!id) return
     try {
       setLoading(true)
-      const [r, recItems, ings] = await Promise.all([
+      const [r, recItems, ings, recs, allItms] = await Promise.all([
         recipesService.getById(id),
         recipesService.getItemsByRecipeId(id),
         ingredientsService.getAll(),
+        recipesService.getAll(),
+        recipesService.getAllRecipeItems(),
       ])
 
       setRecipe(r)
       setItems(recItems)
       setAllIngredients(ings)
+      setAllRecipes(recs)
+      setAllRecipeItems(allItms)
 
       setHeaderData({
         name: r.name,
@@ -163,34 +172,94 @@ export default function FichaDetalhe() {
     loadRecipeData()
   }, [id])
 
-  // Cálculo financeiro da receita atual
+  // Cálculo financeiro da receita atual considerando insumos e guarnições
   const costSummary: RecipeWithCost | null = useMemo(() => {
     if (!recipe) return null
-    return recipesService.computeCosts(recipe, items)
-  }, [recipe, items])
+    return recipesService.computeCosts(recipe, items, allRecipes, allRecipeItems)
+  }, [recipe, items, allRecipes, allRecipeItems])
 
-  // Abre modal de adicionar insumo
-  const handleOpenAddItem = () => {
+  // Guarnições disponíveis para inclusão (apenas type='guarnicao', excluindo a própria receita e aquelas que gerariam ciclo)
+  const availableGarnishes = useMemo(() => {
+    if (!recipe) return []
+    return allRecipes.filter((r) => {
+      if (r.type !== 'guarnicao') return false
+      if (r.id === recipe.id) return false
+      // Verifica ciclo com as ligações atuais
+      if (recipesService.wouldCreateCycle(recipe.id, r.id, allRecipeItems)) return false
+      return true
+    })
+  }, [recipe, allRecipes, allRecipeItems])
+
+  // Separação de itens em Insumos e Guarnições
+  const ingredientItems = useMemo(() => {
+    return items.filter((it) => !it.sub_recipe_id)
+  }, [items])
+
+  const garnishItems = useMemo(() => {
+    return items.filter((it) => !!it.sub_recipe_id)
+  }, [items])
+
+  // Abre modal de adicionar insumo ou guarnição
+  const handleOpenAddItem = (defaultKind: 'ingredient' | 'sub_recipe' = 'ingredient') => {
     setEditingItem(null)
-    const firstIng = allIngredients[0]
-    if (firstIng) {
-      setSelectedIngredientId(firstIng.id)
-      setItemUnit(firstIng.unit === 'kg' ? 'g' : firstIng.unit === 'L' ? 'mL' : firstIng.unit)
-    } else {
+    setItemKind(defaultKind)
+
+    if (defaultKind === 'sub_recipe') {
+      const firstGarnish = availableGarnishes[0]
+      setSelectedSubRecipeId(firstGarnish ? firstGarnish.id : '')
       setSelectedIngredientId('')
-      setItemUnit('g')
+      setItemUnit('unidade')
+      // Sugere a mesma quantidade de porções do prato
+      setItemQuantity(recipe?.yield_portions ? recipe.yield_portions.toString() : '1')
+    } else {
+      const firstIng = allIngredients[0]
+      if (firstIng) {
+        setSelectedIngredientId(firstIng.id)
+        setItemUnit(firstIng.unit === 'kg' ? 'g' : firstIng.unit === 'L' ? 'mL' : firstIng.unit)
+      } else {
+        setSelectedIngredientId('')
+        setItemUnit('g')
+      }
+      setSelectedSubRecipeId('')
+      setItemQuantity('')
     }
-    setItemQuantity('')
     setIsItemModalOpen(true)
   }
 
   // Abre modal de editar item
   const handleOpenEditItem = (item: RecipeItem) => {
     setEditingItem(item)
-    setSelectedIngredientId(item.ingredient_id)
+    if (item.sub_recipe_id) {
+      setItemKind('sub_recipe')
+      setSelectedSubRecipeId(item.sub_recipe_id)
+      setSelectedIngredientId('')
+      setItemUnit('unidade')
+    } else {
+      setItemKind('ingredient')
+      setSelectedIngredientId(item.ingredient_id || '')
+      setSelectedSubRecipeId('')
+      setItemUnit(item.unit)
+    }
     setItemQuantity(item.quantity.toString())
-    setItemUnit(item.unit)
     setIsItemModalOpen(true)
+  }
+
+  // Quando o usuário troca o tipo entre Insumo e Guarnição
+  const handleSwitchItemKind = (kind: 'ingredient' | 'sub_recipe') => {
+    setItemKind(kind)
+    if (kind === 'sub_recipe') {
+      if (!selectedSubRecipeId && availableGarnishes.length > 0) {
+        setSelectedSubRecipeId(availableGarnishes[0].id)
+      }
+      setItemUnit('unidade')
+      if (!itemQuantity) {
+        setItemQuantity(recipe?.yield_portions ? recipe.yield_portions.toString() : '1')
+      }
+    } else {
+      if (!selectedIngredientId && allIngredients.length > 0) {
+        handleSelectIngredient(allIngredients[0].id)
+      }
+    }
   }
 
   // Quando o usuário troca o insumo no select, ajusta a unidade padrão
@@ -206,14 +275,7 @@ export default function FichaDetalhe() {
 
   const handleSaveItem = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!selectedIngredientId || !itemQuantity || !id) {
-      toast({
-        title: 'Preenchimento incompleto',
-        description: 'Selecione um insumo e digite a quantidade utilizada.',
-        variant: 'destructive',
-      })
-      return
-    }
+    if (!id) return
 
     const qtyNum = parseFloat(itemQuantity.replace(',', '.'))
     if (isNaN(qtyNum) || qtyNum <= 0) {
@@ -225,33 +287,88 @@ export default function FichaDetalhe() {
       return
     }
 
+    if (itemKind === 'ingredient') {
+      if (!selectedIngredientId) {
+        toast({
+          title: 'Preenchimento incompleto',
+          description: 'Selecione um insumo para adicionar.',
+          variant: 'destructive',
+        })
+        return
+      }
+    } else {
+      if (!selectedSubRecipeId) {
+        toast({
+          title: 'Preenchimento incompleto',
+          description: 'Selecione uma guarnição para adicionar.',
+          variant: 'destructive',
+        })
+        return
+      }
+
+      // Validação de ciclo
+      if (recipesService.wouldCreateCycle(id, selectedSubRecipeId, allRecipeItems)) {
+        toast({
+          title: 'Dependência circular detectada',
+          description:
+            'Não é permitido incluir uma guarnição que direta ou indiretamente inclui este prato.',
+          variant: 'destructive',
+        })
+        return
+      }
+    }
+
     try {
       setSavingItem(true)
       if (editingItem) {
-        await recipesService.updateItem(editingItem.id, {
-          ingredient_id: selectedIngredientId,
-          quantity: qtyNum,
-          unit: itemUnit,
-        })
+        if (itemKind === 'ingredient') {
+          await recipesService.updateItem(editingItem.id, {
+            ingredient_id: selectedIngredientId,
+            sub_recipe_id: undefined,
+            quantity: qtyNum,
+            unit: itemUnit,
+          })
+        } else {
+          await recipesService.updateItem(editingItem.id, {
+            ingredient_id: undefined,
+            sub_recipe_id: selectedSubRecipeId,
+            quantity: qtyNum,
+            unit: 'unidade',
+          })
+        }
         toast({ title: 'Item atualizado!' })
       } else {
-        await recipesService.addItem({
-          recipe_id: id,
-          ingredient_id: selectedIngredientId,
-          quantity: qtyNum,
-          unit: itemUnit,
-        })
-        toast({ title: 'Insumo adicionado à ficha técnica!' })
+        if (itemKind === 'ingredient') {
+          await recipesService.addItem({
+            recipe_id: id,
+            ingredient_id: selectedIngredientId,
+            quantity: qtyNum,
+            unit: itemUnit,
+          })
+          toast({ title: 'Insumo adicionado à ficha técnica!' })
+        } else {
+          await recipesService.addItem({
+            recipe_id: id,
+            sub_recipe_id: selectedSubRecipeId,
+            quantity: qtyNum,
+            unit: 'unidade',
+          })
+          toast({ title: 'Guarnição adicionada à ficha técnica!' })
+        }
       }
       setIsItemModalOpen(false)
-      // Recarrega itens
-      const updatedItems = await recipesService.getItemsByRecipeId(id)
+      // Recarrega itens locais e lista global de itens para atualização correta do grafo
+      const [updatedItems, allUpdatedItems] = await Promise.all([
+        recipesService.getItemsByRecipeId(id),
+        recipesService.getAllRecipeItems(),
+      ])
       setItems(updatedItems)
+      setAllRecipeItems(allUpdatedItems)
     } catch (error) {
       console.error('Erro ao salvar item:', error)
       toast({
-        title: 'Erro ao salvar insumo',
-        description: 'Ocorreu uma falha ao vincular o insumo à ficha.',
+        title: 'Erro ao salvar item',
+        description: 'Ocorreu uma falha ao vincular o item à ficha.',
         variant: 'destructive',
       })
     } finally {
@@ -263,15 +380,19 @@ export default function FichaDetalhe() {
     if (!id) return
     try {
       await recipesService.deleteItem(itemId)
-      toast({ title: 'Insumo removido da ficha técnica!' })
+      toast({ title: 'Item removido da ficha técnica!' })
       setDeletingItemId(null)
-      const updatedItems = await recipesService.getItemsByRecipeId(id)
+      const [updatedItems, allUpdatedItems] = await Promise.all([
+        recipesService.getItemsByRecipeId(id),
+        recipesService.getAllRecipeItems(),
+      ])
       setItems(updatedItems)
+      setAllRecipeItems(allUpdatedItems)
     } catch (error) {
       console.error('Erro ao remover item:', error)
       toast({
-        title: 'Erro ao remover insumo',
-        description: 'Não foi possível desvincular o insumo.',
+        title: 'Erro ao remover item',
+        description: 'Não foi possível desvincular o item.',
         variant: 'destructive',
       })
     }
@@ -520,7 +641,12 @@ export default function FichaDetalhe() {
       </div>
 
       {/* Componente renderizado estritamente na folha de impressão / PDF (1 página) */}
-      <PrintableRecipeSheet recipe={costSummary} hideCosts={printHideCosts} />
+      <PrintableRecipeSheet
+        recipe={costSummary}
+        hideCosts={printHideCosts}
+        allRecipes={allRecipes}
+        allRecipeItems={allRecipeItems}
+      />
 
       {/* Formulário de Cabeçalho (Modo Edição ou Visualização) */}
       <div className="no-print space-y-6">
@@ -718,13 +844,18 @@ export default function FichaDetalhe() {
               </CardTitle>
             </CardHeader>
             <CardContent className="p-4 pt-1 text-xs text-slate-500">
-              {costSummary.laborCost > 0 ? (
+              {costSummary.garnishesCost > 0 || costSummary.laborCost > 0 ? (
                 <span>
-                  Insumos ({formatCurrency(costSummary.ingredientsCost)}) + M.O. (
-                  {formatCurrency(costSummary.laborCost)})
+                  Insumos ({formatCurrency(costSummary.ingredientsCost)})
+                  {costSummary.garnishesCost > 0 && (
+                    <> + Guarnições ({formatCurrency(costSummary.garnishesCost)})</>
+                  )}
+                  {costSummary.laborCost > 0 && (
+                    <> + M.O. ({formatCurrency(costSummary.laborCost)})</>
+                  )}
                 </span>
               ) : (
-                'Soma dos ingredientes utilizados'
+                'Soma dos ingredientes e componentes'
               )}
             </CardContent>
           </Card>
@@ -789,28 +920,236 @@ export default function FichaDetalhe() {
           </Card>
         </div>
 
+        {/* Aviso de Dependência Circular se detectado */}
+        {costSummary.hasCycleWarning && (
+          <div className="p-4 bg-amber-50 border border-amber-300 rounded-xl flex items-start gap-3 text-amber-900 text-sm">
+            <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-bold">Atenção: ciclo de guarnições detectado</p>
+              <p className="text-xs text-amber-800 mt-0.5">
+                Uma das guarnições componentes possui referência circular e seu sub-custo foi
+                parcialmente interrompido para evitar recursão infinita.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Bloco de Guarnições / Acompanhamentos (Sub-Fichas) - para Pratos Principais */}
+        <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+          <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-gradient-to-r from-amber-50/40 via-white to-transparent">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="p-1 rounded bg-amber-100 text-amber-800">
+                  <Utensils className="h-4 w-4" />
+                </span>
+                <h3 className="text-base font-bold text-slate-900">
+                  Guarnições & Acompanhamentos (Sub-Fichas)
+                </h3>
+                <Badge
+                  variant="outline"
+                  className="bg-amber-50 text-amber-800 border-amber-200 text-xs font-semibold"
+                >
+                  {garnishItems.length} {garnishItems.length === 1 ? 'guarnição' : 'guarnições'}
+                </Badge>
+              </div>
+              <p className="text-xs text-slate-500 mt-1">
+                Fichas técnicas de acompanhamentos (ex.: arroz branco, farofa, vinagrete) cujo custo
+                é somado automaticamente à batelada deste prato.
+              </p>
+            </div>
+            <Button
+              onClick={() => handleOpenAddItem('sub_recipe')}
+              size="sm"
+              className="bg-amber-700 hover:bg-amber-800 text-white shadow-xs flex items-center gap-1.5 self-start sm:self-auto text-xs font-semibold"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Incluir Guarnição
+            </Button>
+          </div>
+
+          {garnishItems.length === 0 ? (
+            <div className="p-8 text-center bg-slate-50/40">
+              <CookingPot className="h-8 w-8 text-slate-300 mx-auto mb-2" />
+              <p className="text-sm font-medium text-slate-700">
+                Nenhuma guarnição vinculada a este prato
+              </p>
+              <p className="text-xs text-slate-400 mt-0.5 max-w-md mx-auto">
+                Se este prato acompanha arroz, feijão, purê, farofa ou vinagrete, você pode
+                aproveitar a ficha técnica já cadastrada da guarnição sem precisar redigitar os
+                ingredientes.
+              </p>
+              {availableGarnishes.length > 0 ? (
+                <Button
+                  onClick={() => handleOpenAddItem('sub_recipe')}
+                  variant="outline"
+                  size="sm"
+                  className="mt-3 border-amber-300 text-amber-800 hover:bg-amber-50 text-xs"
+                >
+                  <Plus className="h-3.5 w-3.5 mr-1" />
+                  Incluir Ficha de Guarnição
+                </Button>
+              ) : (
+                <p className="text-xs text-amber-700 mt-3 bg-amber-50 inline-block px-3 py-1 rounded-md border border-amber-200">
+                  Dica: cadastre fichas técnicas do tipo{' '}
+                  <strong>"Guarnição / Acompanhamento"</strong> para poder vinculá-las aqui.
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader className="bg-slate-50/75">
+                  <TableRow>
+                    <TableHead className="font-semibold text-slate-700">
+                      Ficha da Guarnição
+                    </TableHead>
+                    <TableHead className="font-semibold text-slate-700 text-center">
+                      Rendimento Base da Guarnição
+                    </TableHead>
+                    <TableHead className="font-semibold text-slate-700 text-center">
+                      Qtd. Porções no Prato
+                    </TableHead>
+                    <TableHead className="font-semibold text-slate-700 text-right">
+                      Custo Unitário da Guarnição
+                    </TableHead>
+                    <TableHead className="font-semibold text-slate-700 text-right">
+                      Custo Total no Prato
+                    </TableHead>
+                    <TableHead className="font-semibold text-slate-700 text-right">
+                      % do Custo Total
+                    </TableHead>
+                    <TableHead className="font-semibold text-slate-700 text-right">Ações</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {garnishItems.map((item) => {
+                    const subRecipe =
+                      item.expand?.sub_recipe_id ||
+                      allRecipes.find((r) => r.id === item.sub_recipe_id)
+
+                    // Calcula o custo unitário desta guarnição
+                    let garnishPortionCost = 0
+                    if (subRecipe) {
+                      const recipesMap = new Map<string, Recipe>()
+                      allRecipes.forEach((r) => recipesMap.set(r.id, r))
+                      recipesMap.set(subRecipe.id, subRecipe)
+                      const itemsMap = new Map<string, RecipeItem[]>()
+                      allRecipeItems.forEach((it) => {
+                        const list = itemsMap.get(it.recipe_id) || []
+                        list.push(it)
+                        itemsMap.set(it.recipe_id, list)
+                      })
+                      const calc = recipesService.calculatePortionCost(
+                        subRecipe.id,
+                        recipesMap,
+                        itemsMap,
+                        new Set<string>([recipe.id]),
+                      )
+                      garnishPortionCost = calc.portionCost
+                    }
+
+                    const subCost = garnishPortionCost * item.quantity
+                    const pct =
+                      costSummary.totalCost > 0 ? (subCost / costSummary.totalCost) * 100 : 0
+
+                    return (
+                      <TableRow key={item.id} className="hover:bg-slate-50/50">
+                        <TableCell className="font-medium text-slate-900">
+                          <div>
+                            <span className="font-semibold">
+                              {subRecipe?.name || 'Guarnição não encontrada'}
+                            </span>
+                            <Badge
+                              variant="secondary"
+                              className="ml-2 bg-amber-100 text-amber-900 text-[10px] font-medium"
+                            >
+                              Guarnição
+                            </Badge>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-center text-xs text-slate-600">
+                          {subRecipe?.yield_portions || 1}{' '}
+                          {subRecipe?.yield_portions === 1 ? 'porção' : 'porções'}
+                        </TableCell>
+                        <TableCell className="text-center font-bold text-slate-800">
+                          {item.quantity}{' '}
+                          <span className="text-xs text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 font-medium">
+                            {item.quantity === 1 ? 'porção' : 'porções'}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-right text-slate-600 text-sm font-medium">
+                          {formatCurrency(garnishPortionCost)} / porção
+                        </TableCell>
+                        <TableCell className="text-right font-bold text-slate-900">
+                          {formatCurrency(subCost)}
+                        </TableCell>
+                        <TableCell className="text-right text-xs font-semibold text-slate-600">
+                          {pct.toFixed(1)}%
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleOpenEditItem(item)}
+                              className="h-8 w-8 text-slate-600 hover:text-amber-700 hover:bg-amber-50"
+                              title="Editar porções da guarnição"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => setDeletingItemId(item.id)}
+                              className="h-8 w-8 text-slate-400 hover:text-red-600 hover:bg-red-50"
+                              title="Remover guarnição do prato"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </div>
+
         {/* Tabela de Insumos da Ficha */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
           <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <ScrollText className="h-5 w-5 text-amber-600" />
-                Composição da Receita (Ingredientes)
-              </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Itens que compõem a receita com custo calculado com base no preço de compra.
+              <div className="flex items-center gap-2">
+                <span className="p-1 rounded bg-slate-100 text-slate-700">
+                  <ScrollText className="h-4 w-4" />
+                </span>
+                <h3 className="text-base font-bold text-slate-900">
+                  Insumos da Ficha Técnica (Ingredientes)
+                </h3>
+                <Badge
+                  variant="outline"
+                  className="bg-slate-50 text-slate-700 border-slate-200 text-xs font-semibold"
+                >
+                  {ingredientItems.length} {ingredientItems.length === 1 ? 'insumo' : 'insumos'}
+                </Badge>
+              </div>
+              <p className="text-xs text-slate-500 mt-1">
+                Ingredientes próprios deste prato com custo calculado pelo preço de compra e perda
+                no preparo.
               </p>
             </div>
             <Button
-              onClick={handleOpenAddItem}
-              className="bg-amber-600 hover:bg-amber-700 text-white shadow-sm flex items-center gap-1.5 self-start sm:self-auto text-sm"
+              onClick={() => handleOpenAddItem('ingredient')}
+              className="bg-amber-600 hover:bg-amber-700 text-white shadow-xs flex items-center gap-1.5 self-start sm:self-auto text-sm"
             >
               <Plus className="h-4 w-4" />
               Adicionar Insumo
             </Button>
           </div>
 
-          {items.length === 0 ? (
+          {ingredientItems.length === 0 ? (
             <div className="p-12 text-center">
               <CookingPot className="h-10 w-10 text-slate-300 mx-auto mb-3" />
               <h4 className="text-base font-semibold text-slate-800">
@@ -821,7 +1160,7 @@ export default function FichaDetalhe() {
                 custo exato.
               </p>
               <Button
-                onClick={handleOpenAddItem}
+                onClick={() => handleOpenAddItem('ingredient')}
                 variant="outline"
                 className="mt-4 border-amber-300 text-amber-800 hover:bg-amber-50"
               >
@@ -852,7 +1191,7 @@ export default function FichaDetalhe() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {items.map((item) => {
+                  {ingredientItems.map((item) => {
                     const ing = item.expand?.ingredient_id
                     const itemCost = ing ? calculateItemCost(item.quantity, item.unit, ing) : 0
                     const effPrice = ing
@@ -1344,90 +1683,242 @@ export default function FichaDetalhe() {
         </DialogContent>
       </Dialog>
 
-      {/* Modal Adicionar / Editar Item de Insumo */}
+      {/* Modal Adicionar / Editar Item (Insumo ou Guarnição) */}
       <Dialog open={isItemModalOpen} onOpenChange={setIsItemModalOpen}>
         <DialogContent className="sm:max-w-md">
           <form onSubmit={handleSaveItem}>
             <DialogHeader>
               <DialogTitle>
-                {editingItem ? 'Editar Insumo na Ficha' : 'Adicionar Insumo à Ficha'}
+                {editingItem
+                  ? itemKind === 'sub_recipe'
+                    ? 'Editar Guarnição no Prato'
+                    : 'Editar Insumo na Ficha'
+                  : itemKind === 'sub_recipe'
+                    ? 'Incluir Guarnição (Sub-Ficha)'
+                    : 'Adicionar Insumo à Ficha'}
               </DialogTitle>
               <DialogDescription>
-                Selecione o ingrediente da despensa e a quantidade necessária para preparar a
-                receita.
+                {itemKind === 'sub_recipe'
+                  ? 'Vincule uma ficha técnica de guarnição existente para compor o custo deste prato.'
+                  : 'Selecione o ingrediente da despensa e a quantidade necessária para preparar a receita.'}
               </DialogDescription>
             </DialogHeader>
 
-            <div className="space-y-4 py-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="item-ing">Ingrediente *</Label>
-                <Select value={selectedIngredientId} onValueChange={handleSelectIngredient}>
-                  <SelectTrigger id="item-ing">
-                    <SelectValue placeholder="Selecione o insumo..." />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-60">
-                    {allIngredients.map((ing) => {
-                      const eff = getEffectiveIngredientPrice(ing.price, ing.reduction_percent)
-                      const hasRed = !!(ing.reduction_percent && ing.reduction_percent > 0)
-                      return (
-                        <SelectItem key={ing.id} value={ing.id}>
-                          {ing.name} ({formatCurrency(eff)} / {ing.unit}
-                          {hasRed ? ` - perda ${ing.reduction_percent}%` : ''})
-                        </SelectItem>
-                      )
-                    })}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-4 py-3">
+              {/* Seletor de Tipo: Insumo ou Guarnição (apenas na criação) */}
+              {!editingItem && (
                 <div className="space-y-1.5">
-                  <Label htmlFor="item-qty">Quantidade *</Label>
-                  <Input
-                    id="item-qty"
-                    type="number"
-                    step="any"
-                    min="0.0001"
-                    placeholder="Ex: 250"
-                    value={itemQuantity}
-                    onChange={(e) => setItemQuantity(e.target.value)}
-                    required
-                  />
+                  <Label className="text-xs font-semibold text-slate-700">
+                    Tipo de Componente *
+                  </Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleSwitchItemKind('ingredient')}
+                      className={`p-2.5 rounded-lg border text-xs font-medium text-left flex items-center gap-2 transition-colors ${
+                        itemKind === 'ingredient'
+                          ? 'border-amber-600 bg-amber-50/70 text-amber-900 font-semibold shadow-xs'
+                          : 'border-slate-200 hover:bg-slate-50 text-slate-700'
+                      }`}
+                    >
+                      <ScrollText className="h-4 w-4 text-amber-600 shrink-0" />
+                      <div>
+                        <div>Insumo</div>
+                        <div className="text-[10px] text-slate-400 font-normal">
+                          Ingrediente de despensa
+                        </div>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSwitchItemKind('sub_recipe')}
+                      className={`p-2.5 rounded-lg border text-xs font-medium text-left flex items-center gap-2 transition-colors ${
+                        itemKind === 'sub_recipe'
+                          ? 'border-amber-600 bg-amber-50/70 text-amber-900 font-semibold shadow-xs'
+                          : 'border-slate-200 hover:bg-slate-50 text-slate-700'
+                      }`}
+                    >
+                      <Utensils className="h-4 w-4 text-amber-600 shrink-0" />
+                      <div>
+                        <div>Guarnição</div>
+                        <div className="text-[10px] text-slate-400 font-normal">
+                          Ficha técnica de apoio
+                        </div>
+                      </div>
+                    </button>
+                  </div>
                 </div>
+              )}
 
-                <div className="space-y-1.5">
-                  <Label htmlFor="item-unit">Unidade Utilizada *</Label>
-                  <Select
-                    value={itemUnit}
-                    onValueChange={(val: MeasurementUnit) => setItemUnit(val)}
-                  >
-                    <SelectTrigger id="item-unit">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {UNITS.map((u) => (
-                        <SelectItem key={u} value={u}>
-                          {u}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
+              {itemKind === 'ingredient' ? (
+                <>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="item-ing">Ingrediente *</Label>
+                    <Select value={selectedIngredientId} onValueChange={handleSelectIngredient}>
+                      <SelectTrigger id="item-ing">
+                        <SelectValue placeholder="Selecione o insumo..." />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-60">
+                        {allIngredients.map((ing) => {
+                          const eff = getEffectiveIngredientPrice(ing.price, ing.reduction_percent)
+                          const hasRed = !!(ing.reduction_percent && ing.reduction_percent > 0)
+                          return (
+                            <SelectItem key={ing.id} value={ing.id}>
+                              {ing.name} ({formatCurrency(eff)} / {ing.unit}
+                              {hasRed ? ` - perda ${ing.reduction_percent}%` : ''})
+                            </SelectItem>
+                          )
+                        })}
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-              {/* Pré-visualização do custo proporcional */}
-              {selectedIngredientId && itemQuantity && (
-                <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs flex items-center justify-between">
-                  <span className="text-slate-600">Custo estimado deste item:</span>
-                  <span className="font-bold text-slate-900 text-sm">
-                    {(() => {
-                      const ing = allIngredients.find((i) => i.id === selectedIngredientId)
-                      const q = parseFloat(itemQuantity.replace(',', '.')) || 0
-                      if (!ing) return 'R$ 0,00'
-                      return formatCurrency(calculateItemCost(q, itemUnit, ing))
-                    })()}
-                  </span>
-                </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="item-qty">Quantidade *</Label>
+                      <Input
+                        id="item-qty"
+                        type="number"
+                        step="any"
+                        min="0.0001"
+                        placeholder="Ex: 250"
+                        value={itemQuantity}
+                        onChange={(e) => setItemQuantity(e.target.value)}
+                        required
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor="item-unit">Unidade Utilizada *</Label>
+                      <Select
+                        value={itemUnit}
+                        onValueChange={(val: MeasurementUnit) => setItemUnit(val)}
+                      >
+                        <SelectTrigger id="item-unit">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {UNITS.map((u) => (
+                            <SelectItem key={u} value={u}>
+                              {u}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  {/* Pré-visualização do custo proporcional */}
+                  {selectedIngredientId && itemQuantity && (
+                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs flex items-center justify-between">
+                      <span className="text-slate-600">Custo estimado deste item:</span>
+                      <span className="font-bold text-slate-900 text-sm">
+                        {(() => {
+                          const ing = allIngredients.find((i) => i.id === selectedIngredientId)
+                          const q = parseFloat(itemQuantity.replace(',', '.')) || 0
+                          if (!ing) return 'R$ 0,00'
+                          return formatCurrency(calculateItemCost(q, itemUnit, ing))
+                        })()}
+                      </span>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="item-garnish">Ficha da Guarnição *</Label>
+                    {availableGarnishes.length === 0 && !editingItem ? (
+                      <div className="p-3 rounded-lg bg-amber-50 text-amber-800 text-xs border border-amber-200">
+                        Nenhuma ficha técnica do tipo "Guarnição" disponível sem dependência
+                        circular. Cadastre uma nova guarnição primeiro em Fichas Técnicas.
+                      </div>
+                    ) : (
+                      <Select
+                        value={selectedSubRecipeId}
+                        onValueChange={(val) => setSelectedSubRecipeId(val)}
+                        disabled={!!editingItem}
+                      >
+                        <SelectTrigger id="item-garnish">
+                          <SelectValue placeholder="Selecione a ficha técnica de guarnição..." />
+                        </SelectTrigger>
+                        <SelectContent className="max-h-60">
+                          {(editingItem
+                            ? allRecipes.filter((r) => r.type === 'guarnicao')
+                            : availableGarnishes
+                          ).map((g) => (
+                            <SelectItem key={g.id} value={g.id}>
+                              {g.name} (Rendimento: {g.yield_portions || 1} un)
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="garnish-qty">Quantidade de Porções no Prato (Batelada) *</Label>
+                    <Input
+                      id="garnish-qty"
+                      type="number"
+                      step="any"
+                      min="0.01"
+                      placeholder={`Ex.: ${recipe?.yield_portions || 1}`}
+                      value={itemQuantity}
+                      onChange={(e) => setItemQuantity(e.target.value)}
+                      required
+                    />
+                    <p className="text-[11px] text-slate-400">
+                      Informe quantas porções desta guarnição acompanham a batelada inteira do prato
+                      (ex.: se o prato rende {recipe?.yield_portions || 1} porções, informe{' '}
+                      {recipe?.yield_portions || 1} porções de guarnição).
+                    </p>
+                  </div>
+
+                  {/* Pré-visualização do custo proporcional da guarnição */}
+                  {selectedSubRecipeId && itemQuantity && (
+                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs space-y-1.5">
+                      {(() => {
+                        const targetG = allRecipes.find((r) => r.id === selectedSubRecipeId)
+                        const q = parseFloat(itemQuantity.replace(',', '.')) || 0
+                        if (!targetG) return null
+
+                        const recipesMap = new Map<string, Recipe>()
+                        allRecipes.forEach((r) => recipesMap.set(r.id, r))
+                        recipesMap.set(targetG.id, targetG)
+                        const itemsMap = new Map<string, RecipeItem[]>()
+                        allRecipeItems.forEach((it) => {
+                          const list = itemsMap.get(it.recipe_id) || []
+                          list.push(it)
+                          itemsMap.set(it.recipe_id, list)
+                        })
+                        const calc = recipesService.calculatePortionCost(
+                          targetG.id,
+                          recipesMap,
+                          itemsMap,
+                          new Set<string>([recipe.id]),
+                        )
+                        const itemTotal = calc.portionCost * q
+
+                        return (
+                          <>
+                            <div className="flex items-center justify-between text-slate-600">
+                              <span>Custo unitário da guarnição:</span>
+                              <span className="font-semibold text-slate-800">
+                                {formatCurrency(calc.portionCost)} / porção
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between border-t border-slate-200 pt-1 text-slate-900">
+                              <span className="font-medium">Custo total no prato ({q} un):</span>
+                              <span className="font-bold text-amber-700 text-sm">
+                                {formatCurrency(itemTotal)}
+                              </span>
+                            </div>
+                          </>
+                        )
+                      })()}
+                    </div>
+                  )}
+                </>
               )}
             </div>
 
@@ -1442,11 +1933,18 @@ export default function FichaDetalhe() {
               </Button>
               <Button
                 type="submit"
-                disabled={savingItem}
+                disabled={
+                  savingItem ||
+                  (itemKind === 'sub_recipe' && availableGarnishes.length === 0 && !editingItem)
+                }
                 className="bg-amber-600 hover:bg-amber-700 text-white"
               >
                 {savingItem && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {editingItem ? 'Salvar Quantidade' : 'Incluir Insumo'}
+                {editingItem
+                  ? 'Salvar Alterações'
+                  : itemKind === 'sub_recipe'
+                    ? 'Incluir Guarnição'
+                    : 'Incluir Insumo'}
               </Button>
             </DialogFooter>
           </form>
@@ -1457,10 +1955,10 @@ export default function FichaDetalhe() {
       <Dialog open={!!deletingItemId} onOpenChange={() => setDeletingItemId(null)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Remover Insumo</DialogTitle>
+            <DialogTitle>Remover Item da Ficha</DialogTitle>
             <DialogDescription>
-              Deseja remover este ingrediente da ficha técnica? O custo total e o custo por porção
-              serão recalculados automaticamente.
+              Deseja remover este item da ficha técnica? O custo total e o custo por porção serão
+              recalculados automaticamente.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2 sm:gap-0">
