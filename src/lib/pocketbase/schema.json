@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-28T16:18:05.418Z",
+  "generatedAt": "2026-10-28T16:38:56.059Z",
   "collections": [
     {
       "name": "users",
@@ -219,6 +219,19 @@
           "required": false,
           "system": false,
           "collectionRef": "recipe_types"
+        },
+        {
+          "name": "portion_size_value",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "portion_size_unit",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["g", "kg", "mL", "L", "unidade"]
         }
       ],
       "indexes": [

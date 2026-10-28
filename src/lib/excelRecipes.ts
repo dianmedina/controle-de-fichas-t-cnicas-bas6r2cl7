@@ -8,6 +8,60 @@ import {
 } from '@/lib/excelIngredients'
 import { normalizeName, areNamesEquivalent } from '@/lib/stringUtils'
 
+import { PortionUnit } from '@/types/restaurant'
+
+export interface ParsedPortionSize {
+  value: number
+  unit: PortionUnit
+  rawText: string
+}
+
+/**
+ * Extrai automaticamente o valor numérico e unidade de um texto de porção
+ * Ex.: "PORÇÃO 400G" -> { value: 400, unit: 'g' }
+ * Ex.: "300 mL" -> { value: 300, unit: 'mL' }
+ * Ex.: "1 unidade" -> { value: 1, unit: 'unidade' }
+ * Ex.: "0.5 kg" -> { value: 0.5, unit: 'kg' }
+ */
+export function extractPortionSize(raw?: string): ParsedPortionSize | null {
+  if (!raw) return null
+  const str = String(raw).trim()
+  if (!str) return null
+
+  // Procura padrão com valor numérico e unidade opcional
+  // ex: "PORÇÃO: 400G", "400 g", "300mL", "1 un", "1 unidade", "0,5 kg"
+  const regex =
+    /(?:por[cç][aã]o\s*:?\s*)?(\d+[.,]?\d*)\s*(kg|kilos?|g|gramas?|ml|mililitros?|l|litros?|unidades?|unids?|un)?/i
+  const match = str.match(regex)
+  if (!match) return null
+
+  const valStr = match[1]
+  if (!valStr) return null
+  const num = parseFloat(valStr.replace(',', '.'))
+  if (isNaN(num) || num <= 0) return null
+
+  const rawUnit = (match[2] || '').toLowerCase()
+  let unit: PortionUnit = 'g'
+  if (rawUnit === 'ml' || rawUnit.startsWith('mili')) {
+    unit = 'mL'
+  } else if (rawUnit === 'l' || rawUnit.startsWith('litro')) {
+    unit = 'L'
+  } else if (rawUnit === 'kg' || rawUnit.startsWith('kilo')) {
+    unit = 'kg'
+  } else if (rawUnit === 'un' || rawUnit.startsWith('unid')) {
+    unit = 'unidade'
+  } else {
+    // Padrão em gastronomia quando só vem o número (ex.: "PORÇÃO 400"): g
+    unit = 'g'
+  }
+
+  return {
+    value: Math.round(num * 1000) / 1000,
+    unit,
+    rawText: str,
+  }
+}
+
 export type RecipeSpreadsheetFormat = 'tabular' | 'blocks'
 
 export interface ParsedRecipeItemRow {
@@ -17,6 +71,8 @@ export interface ParsedRecipeItemRow {
   yieldPortions: number
   sellingPrice: number
   portionDescription?: string
+  portionSizeValue?: number
+  portionSizeUnit?: PortionUnit
   laborCost?: number
   notes?: string
   ingredientName: string
@@ -51,6 +107,8 @@ export interface GroupedRecipePreview {
   yieldPortions: number
   sellingPrice: number
   portionDescription?: string
+  portionSizeValue?: number
+  portionSizeUnit?: PortionUnit
   laborCost?: number
   laborMinutes?: number
   laborRatePerMinute?: number
@@ -77,6 +135,7 @@ export interface RecipeSheetDetectionResult {
     recipeNameCol: string
     typeCol?: string
     yieldCol?: string
+    portionCol?: string
     sellingPriceCol?: string
     laborCostCol?: string
     notesCol?: string
@@ -235,6 +294,17 @@ function parseTabularFormat(
   const unitKeywords = ['unidade', 'unid', 'medida', 'um']
   const typeKeywords = ['tipo', 'categoria da ficha', 'tipo de prato', 'classificacao']
   const yieldKeywords = ['rendimento', 'porcoes', 'porções', 'rendimento porcoes', 'yield']
+  const portionKeywords = [
+    'tamanho da porcao',
+    'tamanho da porção',
+    'tamanho porcao',
+    'tamanho porção',
+    'porcao',
+    'porção',
+    'gramatura',
+    'peso da porcao',
+    'peso da porção',
+  ]
   const priceKeywords = ['preco de venda', 'preço de venda', 'venda', 'preco', 'preço']
   const laborKeywords = ['mao de obra', 'mão de obra', 'custo mao de obra', 'labor']
   const notesKeywords = [
@@ -270,6 +340,14 @@ function parseTabularFormat(
     unitCol,
     typeCol,
   ])
+  const portionCol = findBestCol(portionKeywords, [
+    recipeNameCol,
+    ingredientCol,
+    quantityCol,
+    unitCol,
+    typeCol,
+    yieldCol,
+  ])
   const sellingPriceCol = findBestCol(priceKeywords, [
     recipeNameCol,
     ingredientCol,
@@ -277,6 +355,7 @@ function parseTabularFormat(
     unitCol,
     typeCol,
     yieldCol,
+    portionCol,
   ])
   const laborCostCol = findBestCol(laborKeywords, [
     recipeNameCol,
@@ -309,6 +388,7 @@ function parseTabularFormat(
       unitCol,
       typeCol: typeCol || undefined,
       yieldCol: yieldCol || undefined,
+      portionCol: portionCol || undefined,
       sellingPriceCol: sellingPriceCol || undefined,
       laborCostCol: laborCostCol || undefined,
       notesCol: notesCol || undefined,
@@ -508,12 +588,16 @@ function parseBlockFormat(matrix: any[][], sheetName: string): RecipeSheetDetect
       notesParts.push(`Mão de obra: ${laborMinutes} min`)
     }
 
+    const extractedPortion = extractPortionSize(currentBlock.portionDesc)
+
     blockPreviews.push({
       recipeName: currentBlock.recipeName || '(Sem nome de ficha)',
       recipeType: inferredType,
       yieldPortions: resolvedYield,
       sellingPrice: 0,
       portionDescription: currentBlock.portionDesc,
+      portionSizeValue: extractedPortion?.value,
+      portionSizeUnit: extractedPortion?.unit,
       laborCost: laborCost !== undefined ? Math.round(laborCost * 100) / 100 : undefined,
       laborMinutes,
       laborRatePerMinute: laborRatePerMin,
@@ -705,6 +789,13 @@ export function validateAndGroupRecipeRows(
       ? String(row[columnMapping.notesCol] || '').trim()
       : undefined
 
+    // Tamanho da porção (se houver coluna dedicada de porção ou dentro de observações)
+    const rawPortionText =
+      (columnMapping.portionCol && row[columnMapping.portionCol]
+        ? String(row[columnMapping.portionCol]).trim()
+        : '') || (notes && notes.toLowerCase().includes('por') ? notes : '')
+    const extractedPortion = extractPortionSize(rawPortionText)
+
     // Se o grupo não existe, inicializa
     if (!groupsMap.has(recipeKey)) {
       const matchedExisting = existingRecipes.find(
@@ -717,6 +808,9 @@ export function validateAndGroupRecipeRows(
         recipeType: parsedType,
         yieldPortions: parsedYield,
         sellingPrice: parsedPrice,
+        portionDescription: rawPortionText || undefined,
+        portionSizeValue: extractedPortion?.value,
+        portionSizeUnit: extractedPortion?.unit,
         laborCost: parsedLaborCost,
         notes,
         items: [],
@@ -734,6 +828,11 @@ export function validateAndGroupRecipeRows(
     if (group.sellingPrice === 0 && parsedPrice > 0) group.sellingPrice = parsedPrice
     if (!group.laborCost && parsedLaborCost) group.laborCost = parsedLaborCost
     if (!group.notes && notes) group.notes = notes
+    if (!group.portionSizeValue && extractedPortion) {
+      group.portionSizeValue = extractedPortion.value
+      group.portionSizeUnit = extractedPortion.unit
+      if (!group.portionDescription) group.portionDescription = rawPortionText
+    }
 
     // Validação do ingrediente
     const itemErrors: string[] = []
@@ -901,17 +1000,19 @@ export function downloadRecipesTemplate(
       'Ficha Técnica': 'FILÉ MIGNON AO MOLHO',
       Tipo: 'prato',
       'Rendimento (porções)': 1,
+      'Tamanho da Porção': '400g',
       'Preço de Venda': 75.0,
       'Mão de Obra (R$)': 4.5,
       Insumo: 'file mignon',
       Quantidade: 250,
       Unidade: 'g',
-      Observações: 'PORÇÃO 300G • Servir grelhado',
+      Observações: 'Servir grelhado ao ponto',
     },
     {
       'Ficha Técnica': 'FILÉ MIGNON AO MOLHO',
       Tipo: 'prato',
       'Rendimento (porções)': 1,
+      'Tamanho da Porção': '400g',
       'Preço de Venda': 75.0,
       'Mão de Obra (R$)': 4.5,
       Insumo: 'manteiga',

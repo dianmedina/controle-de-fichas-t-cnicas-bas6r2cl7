@@ -162,12 +162,16 @@ export function formatPackageInfo(
 
 export type RecipeType = 'prato' | 'guarnicao' | string
 
+export type PortionUnit = 'g' | 'kg' | 'mL' | 'L' | 'unidade'
+
 export interface Recipe {
   id: string
   name: string
   type: RecipeType
   type_id?: string
   yield_portions: number
+  portion_size_value?: number
+  portion_size_unit?: PortionUnit
   selling_price: number
   labor_cost?: number
   notes?: string
@@ -178,6 +182,30 @@ export interface Recipe {
   expand?: {
     type_id?: DishType
   }
+}
+
+/**
+ * Formata o tamanho da porção estruturado para exibição legível.
+ * Exemplos:
+ * - 400 e 'g' -> "400 g"
+ * - 300 e 'mL' -> "300 mL"
+ * - 1 e 'unidade' -> "1 unidade"
+ * - 2 e 'unidade' -> "2 unidades"
+ * - 0.5 e 'kg' -> "0,5 kg"
+ */
+export function formatPortionSize(
+  value: number | undefined | null,
+  unit: PortionUnit | string | undefined | null,
+): string | null {
+  if (value === undefined || value === null || isNaN(value) || value <= 0) {
+    return null
+  }
+  const formattedVal = value % 1 === 0 ? value.toString() : value.toString().replace('.', ',')
+  const cleanUnit = (unit || 'g').trim()
+  if (cleanUnit === 'unidade') {
+    return `${formattedVal} ${value > 1 ? 'unidades' : 'unidade'}`
+  }
+  return `${formattedVal} ${cleanUnit}`
 }
 
 export type RecipeItemType = 'ingredient' | 'sub_recipe'

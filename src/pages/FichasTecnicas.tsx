@@ -7,6 +7,8 @@ import {
   Ingredient,
   RecipeType,
   DishType,
+  PortionUnit,
+  formatPortionSize,
   formatCurrency,
   formatPercent,
 } from '@/types/restaurant'
@@ -90,6 +92,8 @@ export default function FichasTecnicas() {
     name: '',
     type: 'prato' as RecipeType,
     yield_portions: '1',
+    portion_size_value: '',
+    portion_size_unit: 'g' as PortionUnit,
     selling_price: '',
     labor_cost: '',
     notes: '',
@@ -156,6 +160,8 @@ export default function FichasTecnicas() {
       name: '',
       type: 'prato',
       yield_portions: '1',
+      portion_size_value: '',
+      portion_size_unit: 'g',
       selling_price: '',
       labor_cost: '',
       notes: '',
@@ -169,6 +175,11 @@ export default function FichasTecnicas() {
       name: recipe.name,
       type: recipe.type,
       yield_portions: recipe.yield_portions ? recipe.yield_portions.toString() : '1',
+      portion_size_value:
+        recipe.portion_size_value !== undefined && recipe.portion_size_value !== null
+          ? recipe.portion_size_value.toString()
+          : '',
+      portion_size_unit: (recipe.portion_size_unit as PortionUnit) || 'g',
       selling_price: recipe.selling_price ? recipe.selling_price.toString() : '',
       labor_cost: recipe.labor_cost ? recipe.labor_cost.toString() : '',
       notes: recipe.notes || '',
@@ -188,6 +199,9 @@ export default function FichasTecnicas() {
     }
 
     const portionsNum = parseFloat(formData.yield_portions.replace(',', '.')) || 1
+    const portionSizeNum = formData.portion_size_value.trim()
+      ? parseFloat(formData.portion_size_value.replace(',', '.'))
+      : undefined
     const priceNum = formData.selling_price
       ? parseFloat(formData.selling_price.replace(',', '.'))
       : 0
@@ -232,6 +246,9 @@ export default function FichasTecnicas() {
           type: formData.type,
           type_id: matchedTypeId,
           yield_portions: portionsNum,
+          portion_size_value: portionSizeNum && portionSizeNum > 0 ? portionSizeNum : null,
+          portion_size_unit:
+            portionSizeNum && portionSizeNum > 0 ? formData.portion_size_unit : null,
           selling_price: priceNum,
           labor_cost: laborNum >= 0 ? laborNum : 0,
           notes: formData.notes.trim() || undefined,
@@ -245,6 +262,9 @@ export default function FichasTecnicas() {
           type: formData.type,
           type_id: matchedTypeId,
           yield_portions: portionsNum,
+          portion_size_value: portionSizeNum && portionSizeNum > 0 ? portionSizeNum : null,
+          portion_size_unit:
+            portionSizeNum && portionSizeNum > 0 ? formData.portion_size_unit : null,
           selling_price: priceNum,
           labor_cost: laborNum >= 0 ? laborNum : 0,
           notes: formData.notes.trim() || undefined,
@@ -538,10 +558,17 @@ export default function FichasTecnicas() {
                     </TableCell>
 
                     <TableCell className="text-center text-slate-600">
-                      <span className="font-medium">{recipe.yield_portions}</span>{' '}
-                      <span className="text-xs text-slate-400">
-                        {recipe.yield_portions > 1 ? 'porções' : 'porção'}
-                      </span>
+                      <div className="font-medium">
+                        {recipe.yield_portions}{' '}
+                        <span className="text-xs text-slate-400 font-normal">
+                          {recipe.yield_portions > 1 ? 'porções' : 'porção'}
+                        </span>
+                      </div>
+                      {formatPortionSize(recipe.portion_size_value, recipe.portion_size_unit) && (
+                        <div className="text-[11px] font-semibold text-amber-800 bg-amber-50 rounded px-1.5 py-0.5 inline-block mt-0.5 border border-amber-200">
+                          {formatPortionSize(recipe.portion_size_value, recipe.portion_size_unit)}
+                        </div>
+                      )}
                     </TableCell>
 
                     <TableCell className="text-right font-semibold text-slate-800">
@@ -677,6 +704,47 @@ export default function FichasTecnicas() {
                     onChange={(e) => setFormData({ ...formData, yield_portions: e.target.value })}
                     required
                   />
+                </div>
+              </div>
+
+              {/* Tamanho da porção (gramatura/unidade) */}
+              <div className="space-y-1.5 bg-slate-50 p-3 rounded-lg border border-slate-200">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="r-portion-val" className="text-xs font-semibold text-slate-700">
+                    Tamanho da Porção / Gramatura (opcional)
+                  </Label>
+                  <span className="text-[11px] text-slate-500">Ex.: 400 g, 300 mL, 1 unidade</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Input
+                    id="r-portion-val"
+                    type="number"
+                    step="any"
+                    min="0"
+                    placeholder="Ex: 400"
+                    className="bg-white"
+                    value={formData.portion_size_value}
+                    onChange={(e) =>
+                      setFormData({ ...formData, portion_size_value: e.target.value })
+                    }
+                  />
+                  <Select
+                    value={formData.portion_size_unit}
+                    onValueChange={(val: PortionUnit) =>
+                      setFormData({ ...formData, portion_size_unit: val })
+                    }
+                  >
+                    <SelectTrigger className="bg-white">
+                      <SelectValue placeholder="Unidade" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="g">g (gramas)</SelectItem>
+                      <SelectItem value="kg">kg (quilos)</SelectItem>
+                      <SelectItem value="mL">mL (mililitros)</SelectItem>
+                      <SelectItem value="L">L (litros)</SelectItem>
+                      <SelectItem value="unidade">unidade</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
 

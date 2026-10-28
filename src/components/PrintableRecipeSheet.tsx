@@ -2,15 +2,16 @@ import React from 'react'
 import { RecipeWithCost } from '@/services/recipes'
 import { recipesService } from '@/services/recipes'
 import {
+  Recipe,
+  RecipeItem,
   calculateItemCost,
   formatCurrency,
   formatPercent,
   getEffectiveIngredientPrice,
   formatPackageInfo,
+  formatPortionSize,
 } from '@/types/restaurant'
 import { ChefHat, CookingPot, Utensils, Scale, DollarSign, Image as ImageIcon } from 'lucide-react'
-
-import { Recipe, RecipeItem } from '@/types/restaurant'
 
 interface PrintableRecipeSheetProps {
   recipe: RecipeWithCost
@@ -66,83 +67,118 @@ export const PrintableRecipeSheet: React.FC<PrintableRecipeSheetProps> = ({
         </div>
 
         {/* Resumo de Indicadores Compacto */}
-        {hideCosts ? (
-          <div className="grid grid-cols-3 gap-2 mt-2 pt-2 border-t border-slate-200 text-center">
-            <div className="bg-slate-50 border border-slate-200 rounded p-1.5">
-              <span className="block text-[9px] uppercase font-bold text-slate-500">
-                Rendimento
-              </span>
-              <span className="text-xs font-bold text-slate-900">
-                {recipe.yield_portions} {recipe.yield_portions > 1 ? 'porções' : 'porção'}
-              </span>
-            </div>
+        {(() => {
+          const formattedPortion = formatPortionSize(
+            recipe.portion_size_value,
+            recipe.portion_size_unit,
+          )
 
-            <div className="bg-slate-50 border border-slate-200 rounded p-1.5">
-              <span className="block text-[9px] uppercase font-bold text-slate-500">
-                Total de Insumos
-              </span>
-              <span className="text-xs font-bold text-slate-900">
-                {recipe.items.length} {recipe.items.length === 1 ? 'item' : 'itens'}
-              </span>
-            </div>
+          if (hideCosts) {
+            return (
+              <div
+                className={`grid ${
+                  formattedPortion ? 'grid-cols-4' : 'grid-cols-3'
+                } gap-2 mt-2 pt-2 border-t border-slate-200 text-center`}
+              >
+                <div className="bg-slate-50 border border-slate-200 rounded p-1.5">
+                  <span className="block text-[9px] uppercase font-bold text-slate-500">
+                    Rendimento
+                  </span>
+                  <span className="text-xs font-bold text-slate-900">
+                    {recipe.yield_portions} {recipe.yield_portions > 1 ? 'porções' : 'porção'}
+                  </span>
+                </div>
 
-            <div className="bg-amber-50/70 border border-amber-300 rounded p-1.5">
-              <span className="block text-[9px] uppercase font-bold text-amber-900">
-                Finalidade
-              </span>
-              <span className="text-xs font-extrabold text-amber-950">
-                Produção • Equipe de Cozinha
-              </span>
-            </div>
-          </div>
-        ) : (
-          <div className="grid grid-cols-5 gap-2 mt-2 pt-2 border-t border-slate-200 text-center">
-            <div className="bg-slate-50 border border-slate-200 rounded p-1">
-              <span className="block text-[9px] uppercase font-bold text-slate-500">
-                Rendimento
-              </span>
-              <span className="text-xs font-bold text-slate-900">
-                {recipe.yield_portions} {recipe.yield_portions > 1 ? 'porções' : 'porção'}
-              </span>
-            </div>
+                {formattedPortion && (
+                  <div className="bg-amber-50/80 border border-amber-300 rounded p-1.5">
+                    <span className="block text-[9px] uppercase font-bold text-amber-900">
+                      Tamanho da Porção
+                    </span>
+                    <span className="text-xs font-extrabold text-amber-950">
+                      {formattedPortion}
+                    </span>
+                  </div>
+                )}
 
-            <div className="bg-slate-50 border border-slate-200 rounded p-1">
-              <span className="block text-[9px] uppercase font-bold text-slate-500">
-                Custo Total Batelada
-              </span>
-              <span className="text-xs font-bold text-slate-900">
-                {formatCurrency(recipe.totalCost)}
-              </span>
-            </div>
+                <div className="bg-slate-50 border border-slate-200 rounded p-1.5">
+                  <span className="block text-[9px] uppercase font-bold text-slate-500">
+                    Total de Insumos
+                  </span>
+                  <span className="text-xs font-bold text-slate-900">
+                    {recipe.items.length} {recipe.items.length === 1 ? 'item' : 'itens'}
+                  </span>
+                </div>
 
-            <div className="bg-amber-50/70 border border-amber-300 rounded p-1">
-              <span className="block text-[9px] uppercase font-bold text-amber-900">
-                Custo por Porção (CMV)
-              </span>
-              <span className="text-xs font-extrabold text-amber-950">
-                {formatCurrency(recipe.costPerPortion)}
-              </span>
-            </div>
+                <div className="bg-amber-50/70 border border-amber-300 rounded p-1.5">
+                  <span className="block text-[9px] uppercase font-bold text-amber-900">
+                    Finalidade
+                  </span>
+                  <span className="text-xs font-extrabold text-amber-950">Produção • Equipe</span>
+                </div>
+              </div>
+            )
+          }
 
-            <div className="bg-slate-50 border border-slate-200 rounded p-1">
-              <span className="block text-[9px] uppercase font-bold text-slate-500">
-                Preço de Venda
-              </span>
-              <span className="text-xs font-bold text-slate-900">
-                {recipe.selling_price > 0 ? formatCurrency(recipe.selling_price) : 'Não definido'}
-              </span>
-            </div>
+          return (
+            <div
+              className={`grid ${
+                formattedPortion ? 'grid-cols-6' : 'grid-cols-5'
+              } gap-2 mt-2 pt-2 border-t border-slate-200 text-center`}
+            >
+              <div className="bg-slate-50 border border-slate-200 rounded p-1">
+                <span className="block text-[9px] uppercase font-bold text-slate-500">
+                  Rendimento
+                </span>
+                <span className="text-xs font-bold text-slate-900">
+                  {recipe.yield_portions} {recipe.yield_portions > 1 ? 'porções' : 'porção'}
+                </span>
+              </div>
 
-            <div className="bg-slate-50 border border-slate-200 rounded p-1">
-              <span className="block text-[9px] uppercase font-bold text-slate-500">
-                Margem Estimada
-              </span>
-              <span className="text-xs font-bold text-emerald-800">
-                {recipe.selling_price > 0 ? formatPercent(recipe.marginPercent) : '-'}
-              </span>
+              {formattedPortion && (
+                <div className="bg-amber-50/80 border border-amber-300 rounded p-1">
+                  <span className="block text-[9px] uppercase font-bold text-amber-900">
+                    Porção
+                  </span>
+                  <span className="text-xs font-extrabold text-amber-950">{formattedPortion}</span>
+                </div>
+              )}
+
+              <div className="bg-slate-50 border border-slate-200 rounded p-1">
+                <span className="block text-[9px] uppercase font-bold text-slate-500">
+                  Custo Batelada
+                </span>
+                <span className="text-xs font-bold text-slate-900">
+                  {formatCurrency(recipe.totalCost)}
+                </span>
+              </div>
+
+              <div className="bg-amber-50/70 border border-amber-300 rounded p-1">
+                <span className="block text-[9px] uppercase font-bold text-amber-900">
+                  Custo / Porção
+                </span>
+                <span className="text-xs font-extrabold text-amber-950">
+                  {formatCurrency(recipe.costPerPortion)}
+                </span>
+              </div>
+
+              <div className="bg-slate-50 border border-slate-200 rounded p-1">
+                <span className="block text-[9px] uppercase font-bold text-slate-500">
+                  Preço de Venda
+                </span>
+                <span className="text-xs font-bold text-slate-900">
+                  {recipe.selling_price > 0 ? formatCurrency(recipe.selling_price) : 'Não def.'}
+                </span>
+              </div>
+
+              <div className="bg-slate-50 border border-slate-200 rounded p-1">
+                <span className="block text-[9px] uppercase font-bold text-slate-500">Margem</span>
+                <span className="text-xs font-bold text-emerald-800">
+                  {recipe.selling_price > 0 ? formatPercent(recipe.marginPercent) : '-'}
+                </span>
+              </div>
             </div>
-          </div>
-        )}
+          )
+        })()}
       </div>
 
       {/* Grid de 2 Colunas para caber perfeitamente em 1 página */}
@@ -439,6 +475,12 @@ export const PrintableRecipeSheet: React.FC<PrintableRecipeSheetProps> = ({
                 <span className="font-bold text-xs text-slate-900">
                   {recipe.yield_portions}{' '}
                   {recipe.yield_portions > 1 ? 'porções padronizadas' : 'porção padronizada'}
+                  {formatPortionSize(recipe.portion_size_value, recipe.portion_size_unit) && (
+                    <span className="text-amber-900 font-extrabold ml-1.5">
+                      ({formatPortionSize(recipe.portion_size_value, recipe.portion_size_unit)}
+                      /porção)
+                    </span>
+                  )}
                 </span>
               </div>
               <div className="text-right">

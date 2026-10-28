@@ -306,6 +306,10 @@ export function ImportRecipesDialog({
             type: group.recipeType,
             type_id: linkedTypeId || group.matchedExistingRecipe.type_id,
             yield_portions: group.yieldPortions,
+            portion_size_value:
+              group.portionSizeValue ?? group.matchedExistingRecipe.portion_size_value,
+            portion_size_unit:
+              group.portionSizeUnit ?? group.matchedExistingRecipe.portion_size_unit,
             selling_price: group.sellingPrice,
             labor_cost: group.laborCost !== undefined ? group.laborCost : 0,
             notes: group.notes,
@@ -325,6 +329,8 @@ export function ImportRecipesDialog({
             type: group.recipeType,
             type_id: linkedTypeId,
             yield_portions: group.yieldPortions,
+            portion_size_value: group.portionSizeValue,
+            portion_size_unit: group.portionSizeUnit,
             selling_price: group.sellingPrice,
             labor_cost: group.laborCost !== undefined ? group.laborCost : 0,
             notes: group.notes,
@@ -731,6 +737,28 @@ export function ImportRecipesDialog({
                     </div>
 
                     <div className="space-y-1">
+                      <Label className="text-xs text-slate-700">Tamanho da Porção (opcional)</Label>
+                      <Select
+                        value={(columnMapping as any).portionCol || 'none'}
+                        onValueChange={(val) => handleRemap('portionCol', val)}
+                      >
+                        <SelectTrigger className="h-8 text-xs bg-white">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none" className="text-xs text-slate-400">
+                            (Detectar em Observações)
+                          </SelectItem>
+                          {sheetResult.headers.map((h) => (
+                            <SelectItem key={h} value={h} className="text-xs">
+                              {h}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-1">
                       <Label className="text-xs text-slate-700">Mão de Obra (R$)</Label>
                       <Select
                         value={columnMapping.laborCostCol || 'none'}
@@ -834,14 +862,21 @@ export function ImportRecipesDialog({
                             </span>
                           </div>
 
-                          {group.portionDescription && (
+                          {group.portionSizeValue ? (
+                            <Badge
+                              variant="outline"
+                              className="text-[11px] bg-amber-50 text-amber-900 border-amber-200 font-medium shrink-0"
+                            >
+                              Porção: {group.portionSizeValue} {group.portionSizeUnit || 'g'}
+                            </Badge>
+                          ) : group.portionDescription ? (
                             <Badge
                               variant="outline"
                               className="text-[11px] bg-slate-100 text-slate-700 font-medium shrink-0"
                             >
                               {group.portionDescription}
                             </Badge>
-                          )}
+                          ) : null}
 
                           <Badge
                             variant="secondary"

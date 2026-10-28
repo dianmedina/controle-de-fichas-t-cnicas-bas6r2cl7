@@ -9,11 +9,13 @@ import {
   Ingredient,
   MeasurementUnit,
   DishType,
+  PortionUnit,
   calculateItemCost,
   formatCurrency,
   formatPercent,
   getEffectiveIngredientPrice,
   formatPackageInfo,
+  formatPortionSize,
 } from '@/types/restaurant'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -102,6 +104,8 @@ export default function FichaDetalhe() {
     name: '',
     type: 'prato' as string,
     yield_portions: '1',
+    portion_size_value: '',
+    portion_size_unit: 'g' as PortionUnit,
     selling_price: '',
     labor_cost: '',
     notes: '',
@@ -157,6 +161,11 @@ export default function FichaDetalhe() {
         name: r.name,
         type: r.type,
         yield_portions: r.yield_portions ? r.yield_portions.toString() : '1',
+        portion_size_value:
+          r.portion_size_value !== undefined && r.portion_size_value !== null
+            ? r.portion_size_value.toString()
+            : '',
+        portion_size_unit: (r.portion_size_unit as PortionUnit) || 'g',
         selling_price: r.selling_price ? r.selling_price.toString() : '',
         labor_cost: r.labor_cost ? r.labor_cost.toString() : '',
         notes: r.notes || '',
@@ -442,6 +451,9 @@ export default function FichaDetalhe() {
     }
 
     const portionsNum = parseFloat(headerData.yield_portions.replace(',', '.')) || 1
+    const portionSizeNum = headerData.portion_size_value.trim()
+      ? parseFloat(headerData.portion_size_value.replace(',', '.'))
+      : undefined
     const priceNum = headerData.selling_price
       ? parseFloat(headerData.selling_price.replace(',', '.'))
       : 0
@@ -458,6 +470,9 @@ export default function FichaDetalhe() {
         type: headerData.type as any,
         type_id: matchedTypeId,
         yield_portions: portionsNum,
+        portion_size_value: portionSizeNum && portionSizeNum > 0 ? portionSizeNum : null,
+        portion_size_unit:
+          portionSizeNum && portionSizeNum > 0 ? headerData.portion_size_unit : null,
         selling_price: priceNum,
         labor_cost: laborNum >= 0 ? laborNum : 0,
         notes: headerData.notes.trim() || undefined,
@@ -767,6 +782,49 @@ export default function FichaDetalhe() {
                   </div>
                 </div>
 
+                {/* Tamanho da Porção / Gramatura */}
+                <div className="space-y-1.5 bg-slate-50 p-3 rounded-lg border border-slate-200">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="h-portion-val" className="text-xs font-semibold text-slate-700">
+                      Tamanho da Porção / Gramatura (opcional)
+                    </Label>
+                    <span className="text-[11px] text-slate-500">
+                      Ex.: 400 g, 300 mL, 1 unidade
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input
+                      id="h-portion-val"
+                      type="number"
+                      step="any"
+                      min="0"
+                      placeholder="Ex: 400"
+                      className="bg-white"
+                      value={headerData.portion_size_value}
+                      onChange={(e) =>
+                        setHeaderData({ ...headerData, portion_size_value: e.target.value })
+                      }
+                    />
+                    <Select
+                      value={headerData.portion_size_unit}
+                      onValueChange={(val: PortionUnit) =>
+                        setHeaderData({ ...headerData, portion_size_unit: val })
+                      }
+                    >
+                      <SelectTrigger className="bg-white">
+                        <SelectValue placeholder="Unidade" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="g">g (gramas)</SelectItem>
+                        <SelectItem value="kg">kg (quilos)</SelectItem>
+                        <SelectItem value="mL">mL (mililitros)</SelectItem>
+                        <SelectItem value="L">L (litros)</SelectItem>
+                        <SelectItem value="unidade">unidade</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
                 <div className="space-y-1.5">
                   <Label htmlFor="h-labor">Custo de Mão de Obra da Batelada (R$)</Label>
                   <div className="relative">
@@ -861,6 +919,11 @@ export default function FichaDetalhe() {
                 <p className="text-xl font-bold text-slate-800">
                   {recipe.yield_portions} {recipe.yield_portions > 1 ? 'porções' : 'porção'}
                 </p>
+                {formatPortionSize(recipe.portion_size_value, recipe.portion_size_unit) && (
+                  <p className="text-xs font-semibold text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 mt-1 inline-block">
+                    Porção: {formatPortionSize(recipe.portion_size_value, recipe.portion_size_unit)}
+                  </p>
+                )}
               </div>
               <div className="w-px h-8 bg-slate-200" />
               <div>
