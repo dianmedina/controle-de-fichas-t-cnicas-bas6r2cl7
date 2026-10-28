@@ -196,21 +196,18 @@ export function ImportRecipesDialog({
   }
 
   const handleConfirmImport = async () => {
-    // Quando autoCreateMissingIngredients está ativo, consideramos válidos os grupos cujo único erro era insumo faltante
+    // Fichas elegíveis para importação
     const groupsToProcess = previewGroups.filter((g) => {
       if (g.isValid) return true
-      if (!autoCreateMissingIngredients) return false
-      // Verifica se todos os erros do grupo são de insumo não cadastrado
-      const otherErrors = g.errors.filter((e) => !e.includes('não cadastrado'))
-      const hasValidItems = g.items.some((it) => it.quantity > 0 && it.ingredientName)
-      return otherErrors.length === 0 && hasValidItems
+      // Se tiver erro real (ex: sem nome ou sem itens válidos), não processa
+      return false
     })
 
     if (groupsToProcess.length === 0) {
       toast({
         title: 'Nenhuma ficha técnica válida para importar',
         description:
-          'Corrija os erros na planilha ou ative a opção para criar insumos automaticamente.',
+          'Verifique as fichas na planilha: é necessário ao menos o nome do prato e uma linha de ingrediente com quantidade maior que zero.',
         variant: 'destructive',
       })
       return
@@ -220,7 +217,8 @@ export function ImportRecipesDialog({
       setImporting(true)
       let createdCount = 0
       let updatedCount = 0
-      let autoCreatedIngredientsCount = 0
+      const autoCreatedIngredientsList: string[] = []
+      const normalizedUnitsList: { from: string; to: string }[] = []
 
       // Mapa de ingredientes criados nesta importação ou já existentes
       // Indexado pelo normalizeName
@@ -255,10 +253,26 @@ export function ImportRecipesDialog({
                   'Criado automaticamente pela importação de fichas técnicas (preço R$ 0,00 a definir)',
                 )
                 knownIngredientsMap.set(norm, createdIng)
-                autoCreatedIngredientsCount++
+                if (!autoCreatedIngredientsList.includes(rawName)) {
+                  autoCreatedIngredientsList.push(rawName)
+                }
               } catch (createErr) {
                 console.error(`Erro ao auto-criar insumo "${rawName}":`, createErr)
               }
+            }
+          }
+        }
+      }
+
+      // Rastreia unidades normalizadas que divergiram do original
+      for (const group of groupsToProcess) {
+        for (const item of group.items) {
+          if (item.originalUnit && item.originalUnit.toLowerCase() !== item.unit.toLowerCase()) {
+            const alreadyInList = normalizedUnitsList.some(
+              (u) => u.from === item.originalUnit && u.to === item.unit,
+            )
+            if (!alreadyInList) {
+              normalizedUnitsList.push({ from: item.originalUnit, to: item.unit })
             }
           }
         }
@@ -338,13 +352,30 @@ export function ImportRecipesDialog({
         }
       }
 
+      // Monta resumo detalhado
+      const summaryParts: string[] = [
+        `${groupsToProcess.length} fichas importadas (${createdCount} novas, ${updatedCount} atualizadas).`,
+      ]
+
+      if (autoCreatedIngredientsList.length > 0) {
+        summaryParts.push(
+          `${autoCreatedIngredientsList.length} novos insumos criados com preço R$ 0,00: ${autoCreatedIngredientsList.slice(0, 5).join(', ')}${autoCreatedIngredientsList.length > 5 ? ` (+${autoCreatedIngredientsList.length - 5})` : ''}.`,
+        )
+      }
+
+      if (normalizedUnitsList.length > 0) {
+        const unitsDesc = normalizedUnitsList
+          .slice(0, 4)
+          .map((u) => `"${u.from}" → "${u.to}"`)
+          .join(', ')
+        summaryParts.push(
+          `${normalizedUnitsList.length} unidade(s) normalizada(s) para o padrão (${unitsDesc}${normalizedUnitsList.length > 4 ? '...' : ''}).`,
+        )
+      }
+
       toast({
         title: 'Importação de Fichas Técnicas concluída!',
-        description: `${groupsToProcess.length} fichas importadas (${createdCount} criadas, ${updatedCount} atualizadas).${
-          autoCreatedIngredientsCount > 0
-            ? ` ${autoCreatedIngredientsCount} novos insumos foram criados automaticamente com preço R$ 0,00.`
-            : ''
-        }`,
+        description: summaryParts.join(' '),
       })
 
       handleDialogChange(false)
@@ -847,6 +878,19 @@ export function ImportRecipesDialog({
                             </Badge>
                           )}
 
+                          {group.warnings && group.warnings.length > 0 && (
+                            <Badge
+                              variant="outline"
+                              className="bg-amber-50 text-amber-900 border-amber-300 gap-1 text-[11px]"
+                              title={group.warnings.join(' • ')}
+                            >
+                              <AlertTriangle className="h-3 w-3 text-amber-700" />
+                              {group.warnings.length === 1
+                                ? group.warnings[0]
+                                : `${group.warnings.length} avisos`}
+                            </Badge>
+                          )}
+
                           {group.isValid ? (
                             <Badge className="bg-emerald-100 text-emerald-900 border-emerald-200 gap-1 text-[11px]">
                               <CheckCircle2 className="h-3 w-3 text-emerald-700" />
@@ -937,13 +981,29 @@ export function ImportRecipesDialog({
                                           )}
                                         </div>
                                       ) : (
-                                        <span className="text-red-600 font-medium">
-                                          Não cadastrado
-                                        </span>
+                                        <div>
+                                          <span className="text-amber-800 font-medium">
+                                            Será criado (R$ 0,00)
+                                          </span>
+                                          <span className="block text-[10px] text-amber-600">
+                                            Insumo novo a cadastrar preço depois
+                                          </span>
+                                        </div>
                                       )}
                                     </TableCell>
                                     <TableCell className="text-xs text-center font-bold py-1.5">
-                                      {it.quantity} {it.unit}
+                                      <span>
+                                        {it.quantity} {it.unit}
+                                      </span>
+                                      {it.originalUnit &&
+                                        it.originalUnit.toLowerCase() !== it.unit.toLowerCase() && (
+                                          <span
+                                            className="block text-[10px] text-blue-700 font-normal"
+                                            title={`Normalizado de "${it.originalUnit}" para "${it.unit}"`}
+                                          >
+                                            (de: {it.originalUnit})
+                                          </span>
+                                        )}
                                     </TableCell>
                                     <TableCell className="text-xs text-right text-slate-600 py-1.5">
                                       {ing ? (
@@ -970,9 +1030,19 @@ export function ImportRecipesDialog({
                                     </TableCell>
                                     <TableCell className="text-xs text-center py-1.5">
                                       {it.isValid ? (
-                                        <span className="inline-flex items-center gap-1 text-[11px] text-emerald-700 font-medium">
-                                          <CheckCircle2 className="h-3 w-3" /> OK
-                                        </span>
+                                        it.warning ? (
+                                          <span
+                                            className="inline-flex items-center gap-1 text-[11px] text-amber-800 font-medium"
+                                            title={it.warning}
+                                          >
+                                            <AlertTriangle className="h-3 w-3 text-amber-600 shrink-0" />
+                                            Aviso
+                                          </span>
+                                        ) : (
+                                          <span className="inline-flex items-center gap-1 text-[11px] text-emerald-700 font-medium">
+                                            <CheckCircle2 className="h-3 w-3" /> OK
+                                          </span>
+                                        )
                                       ) : (
                                         <span
                                           className="inline-flex items-center gap-1 text-[11px] text-red-600 font-medium"
@@ -1032,47 +1102,11 @@ export function ImportRecipesDialog({
             <Button
               type="button"
               onClick={handleConfirmImport}
-              disabled={
-                importing ||
-                parsing ||
-                (autoCreateMissingIngredients
-                  ? previewGroups.filter((g) => {
-                      if (g.isValid) return true
-                      const otherErrors = g.errors.filter((e) => !e.includes('não cadastrado'))
-                      return (
-                        otherErrors.length === 0 &&
-                        g.items.some((it) => it.quantity > 0 && it.ingredientName)
-                      )
-                    }).length === 0
-                  : validCount === 0)
-              }
+              disabled={importing || parsing || validCount === 0}
               className="bg-orange-600 hover:bg-orange-700 text-white gap-1.5"
             >
               {importing && <Loader2 className="h-4 w-4 animate-spin" />}
-              Confirmar Importação (
-              {autoCreateMissingIngredients
-                ? previewGroups.filter((g) => {
-                    if (g.isValid) return true
-                    const otherErrors = g.errors.filter((e) => !e.includes('não cadastrado'))
-                    return (
-                      otherErrors.length === 0 &&
-                      g.items.some((it) => it.quantity > 0 && it.ingredientName)
-                    )
-                  }).length
-                : validCount}{' '}
-              {(autoCreateMissingIngredients
-                ? previewGroups.filter((g) => {
-                    if (g.isValid) return true
-                    const otherErrors = g.errors.filter((e) => !e.includes('não cadastrado'))
-                    return (
-                      otherErrors.length === 0 &&
-                      g.items.some((it) => it.quantity > 0 && it.ingredientName)
-                    )
-                  }).length
-                : validCount) === 1
-                ? 'ficha'
-                : 'fichas'}
-              )
+              Confirmar Importação ({validCount} {validCount === 1 ? 'ficha' : 'fichas'})
             </Button>
           )}
         </DialogFooter>

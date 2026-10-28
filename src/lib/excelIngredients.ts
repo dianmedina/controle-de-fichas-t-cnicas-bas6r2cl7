@@ -60,46 +60,191 @@ const VALID_UNITS: MeasurementUnit[] = ['kg', 'g', 'L', 'mL', 'unidade']
 /**
  * Normaliza e identifica a unidade de medida a partir de strings comuns
  */
-export function normalizeUnit(rawUnit: any): MeasurementUnit | null {
-  if (!rawUnit) return null
-  const str = normalizeString(rawUnit)
+export interface UnitNormalizationResult {
+  unit: MeasurementUnit
+  originalUnit: string
+  normalized: boolean
+  assumedDefault: boolean
+  warning?: string
+}
 
-  if (['kg', 'kilo', 'quilo', 'quilograma', 'kilograma', 'kgs'].includes(str)) {
-    return 'kg'
+/**
+ * Normaliza e identifica a unidade de medida a partir de strings comuns e variações.
+ * Aceita abreviações, plurais, acentos e caixa.
+ * Se houver equivalência direta (ex: "gr" -> "g", "kilo" -> "kg", "mililitro" -> "mL"):
+ * converte para a unidade padrão correspondente.
+ * Se não for equivalente ou for unidade de contagem/embalagem (ex: "cx", "folha", "dente", "colher"):
+ * assume a unidade padrão compatível ou "unidade" com aviso informativo, sem rejeitar.
+ */
+export function normalizeUnitWithDetails(rawUnit: any): UnitNormalizationResult {
+  const originalStr = String(rawUnit ?? '').trim()
+  if (!originalStr) {
+    return {
+      unit: 'unidade',
+      originalUnit: '',
+      normalized: false,
+      assumedDefault: true,
+      warning: 'Unidade não informada; assumido "unidade"',
+    }
   }
-  if (['g', 'gr', 'grama', 'gramas'].includes(str)) {
-    return 'g'
-  }
-  if (['l', 'litro', 'litros', 'lt', 'lts'].includes(str)) {
-    return 'L'
-  }
-  if (['ml', 'mililitro', 'mililitros', 'mls'].includes(str)) {
-    return 'mL'
-  }
+
+  const str = normalizeString(originalStr).toLowerCase()
+
+  // 1. Quilo / Quilograma (kg)
   if (
     [
-      'unidade',
-      'unidades',
-      'un',
-      'und',
-      'unid',
-      'peca',
-      'pc',
-      'cx',
-      'pct',
-      'pacote',
-      'dz',
-      'duzia',
+      'kg',
+      'kgs',
+      'kilo',
+      'kilos',
+      'quilo',
+      'quilos',
+      'quilograma',
+      'quilogramas',
+      'kilograma',
+      'kilogramas',
     ].includes(str)
   ) {
-    return 'unidade'
+    return {
+      unit: 'kg',
+      originalUnit: originalStr,
+      normalized: originalStr !== 'kg',
+      assumedDefault: false,
+    }
   }
 
-  // Verifica se casa com alguma exata
-  const exact = VALID_UNITS.find((u) => u.toLowerCase() === str)
-  if (exact) return exact
+  // 2. Grama (g)
+  if (['g', 'gr', 'grs', 'grama', 'gramas', 'grm'].includes(str)) {
+    return {
+      unit: 'g',
+      originalUnit: originalStr,
+      normalized: originalStr !== 'g',
+      assumedDefault: false,
+    }
+  }
 
-  return null
+  // 3. Litro (L)
+  if (['l', 'lt', 'lts', 'litro', 'litros', 'ltr', 'ltrs'].includes(str)) {
+    return {
+      unit: 'L',
+      originalUnit: originalStr,
+      normalized: originalStr !== 'L',
+      assumedDefault: false,
+    }
+  }
+
+  // 4. Mililitro (mL)
+  if (['ml', 'mls', 'mililitro', 'mililitros', 'mlitro'].includes(str)) {
+    return {
+      unit: 'mL',
+      originalUnit: originalStr,
+      normalized: originalStr !== 'mL',
+      assumedDefault: false,
+    }
+  }
+
+  // 5. Unidade direta e abreviações diretas de unidade/peça
+  if (
+    ['unidade', 'unidades', 'un', 'und', 'unid', 'uni', 'u', 'peca', 'pecas', 'pc', 'pcs'].includes(
+      str,
+    )
+  ) {
+    return {
+      unit: 'unidade',
+      originalUnit: originalStr,
+      normalized: originalStr !== 'unidade',
+      assumedDefault: false,
+    }
+  }
+
+  // 6. Embalagens / agrupamentos comuns que convertem para contagem (unidade) com aviso
+  if (
+    [
+      'cx',
+      'caixa',
+      'caixas',
+      'pct',
+      'pacote',
+      'pacotes',
+      'dz',
+      'duzia',
+      'duzias',
+      'fardo',
+      'fardos',
+      'lata',
+      'latas',
+      'garrafa',
+      'garrafas',
+      'pote',
+      'potes',
+      'saco',
+      'sacos',
+      'frasco',
+      'frascos',
+      'bandeja',
+      'bandejas',
+      'vidro',
+      'vidros',
+      'envelope',
+      'envelopes',
+      'dose',
+      'doses',
+      'porcao',
+      'porcoes',
+      'folha',
+      'folhas',
+      'dente',
+      'dentes',
+      'ramo',
+      'ramos',
+      'maco',
+      'macos',
+      'colher',
+      'colheres',
+      'xicara',
+      'xicaras',
+      'pitada',
+      'pitadas',
+      'fatia',
+      'fatias',
+    ].includes(str)
+  ) {
+    return {
+      unit: 'unidade',
+      originalUnit: originalStr,
+      normalized: true,
+      assumedDefault: true,
+      warning: `Unidade "${originalStr}" adaptada para "unidade"`,
+    }
+  }
+
+  // 7. Casa exata case-insensitive com VALID_UNITS
+  const exact = VALID_UNITS.find((u) => u.toLowerCase() === str)
+  if (exact) {
+    return {
+      unit: exact,
+      originalUnit: originalStr,
+      normalized: originalStr !== exact,
+      assumedDefault: false,
+    }
+  }
+
+  // 8. Unidade não reconhecida: assume "unidade" com aviso informativo sem rejeitar a linha
+  return {
+    unit: 'unidade',
+    originalUnit: originalStr,
+    normalized: true,
+    assumedDefault: true,
+    warning: `Unidade "${originalStr}" não reconhecida; assumido "unidade"`,
+  }
+}
+
+/**
+ * Normaliza e identifica a unidade de medida a partir de strings comuns.
+ * Mantido para compatibilidade, sempre retornando uma MeasurementUnit válida padrão.
+ */
+export function normalizeUnit(rawUnit: any): MeasurementUnit {
+  return normalizeUnitWithDetails(rawUnit).unit
 }
 
 /**
@@ -310,11 +455,9 @@ export function validateIngredientRows(
       seenNames.add(normName)
     }
 
-    // Unidade Base
-    const normalizedUnit = normalizeUnit(rawUnit)
-    if (!normalizedUnit) {
-      errors.push(`Unidade "${rawUnit}" inválida (use kg, g, L, mL ou unidade)`)
-    }
+    // Unidade Base com normalização flexível
+    const unitDetails = normalizeUnitWithDetails(rawUnit)
+    const normalizedUnit = unitDetails.unit
 
     // Preço bruto informado (da embalagem ou por unidade).
     // Se não informado ou 0, aceitamos como 0 (permitindo criação automática e ajuste posterior)
@@ -349,8 +492,8 @@ export function validateIngredientRows(
     }
 
     if (rawPkgUnit) {
-      const u = normalizeUnit(rawPkgUnit)
-      if (u) normalizedPackageUnit = u
+      const pkgUnitDetails = normalizeUnitWithDetails(rawPkgUnit)
+      normalizedPackageUnit = pkgUnitDetails.unit
     }
 
     // Se informou tamanho de embalagem mas não informou unidade da embalagem, assume a própria unidade base (se houver)

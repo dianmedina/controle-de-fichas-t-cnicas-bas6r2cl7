@@ -217,9 +217,15 @@ export function validateParsedRows(
     let normalizedQuantity: number | undefined
     if (typeof rawQuantity === 'number') {
       normalizedQuantity = Math.floor(rawQuantity)
-    } else if (rawQuantity) {
-      const parsed = parseInt(String(rawQuantity).replace(/[^0-9]/g, ''), 10)
-      if (!isNaN(parsed)) normalizedQuantity = parsed
+    } else if (rawQuantity !== undefined && rawQuantity !== null && rawQuantity !== '') {
+      let strQ = String(rawQuantity).trim()
+      if (strQ.includes(',') && strQ.includes('.')) {
+        strQ = strQ.replace(/\./g, '').replace(',', '.')
+      } else if (strQ.includes(',')) {
+        strQ = strQ.replace(',', '.')
+      }
+      const parsed = parseFloat(strQ)
+      if (!isNaN(parsed)) normalizedQuantity = Math.floor(parsed)
     }
 
     const errors: string[] = []

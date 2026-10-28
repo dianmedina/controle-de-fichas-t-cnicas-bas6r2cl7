@@ -1,7 +1,11 @@
 import * as XLSX from 'xlsx'
 import { Ingredient, Recipe, RecipeType, MeasurementUnit } from '@/types/restaurant'
 import { normalizeString } from '@/lib/excelSales'
-import { normalizeUnit } from '@/lib/excelIngredients'
+import {
+  normalizeUnit,
+  normalizeUnitWithDetails,
+  UnitNormalizationResult,
+} from '@/lib/excelIngredients'
 import { normalizeName, areNamesEquivalent } from '@/lib/stringUtils'
 
 export type RecipeSpreadsheetFormat = 'tabular' | 'blocks'
@@ -18,9 +22,27 @@ export interface ParsedRecipeItemRow {
   ingredientName: string
   quantity: number
   unit: MeasurementUnit
+  originalUnit?: string
+  unitWarning?: string
   // Reconciliações
   matchedIngredient?: Ingredient
+  isMissingIngredient?: boolean
   error?: string
+  warning?: string
+}
+
+export interface GroupedRecipePreviewItem {
+  rowIndex: number
+  ingredientName: string
+  quantity: number
+  unit: MeasurementUnit
+  originalUnit?: string
+  unitWarning?: string
+  matchedIngredient?: Ingredient
+  isMissingIngredient?: boolean
+  error?: string
+  warning?: string
+  isValid: boolean
 }
 
 export interface GroupedRecipePreview {
@@ -34,19 +56,12 @@ export interface GroupedRecipePreview {
   laborRatePerMinute?: number
   rawSubtotal?: number
   notes?: string
-  items: {
-    rowIndex: number
-    ingredientName: string
-    quantity: number
-    unit: MeasurementUnit
-    matchedIngredient?: Ingredient
-    error?: string
-    isValid: boolean
-  }[]
+  items: GroupedRecipePreviewItem[]
   matchedExistingRecipe?: Recipe
   isUpdate: boolean
   isValid: boolean
   errors: string[]
+  warnings: string[]
 }
 
 export interface RecipeSheetDetectionResult {
@@ -464,19 +479,24 @@ function parseBlockFormat(matrix: any[][], sheetName: string): RecipeSheetDetect
     // Monta itens do bloco
     const items = rawItems.map((ri) => {
       const q = parseNumericValue(ri.rawQty)
-      const u = normalizeUnit(ri.rawUnit)
+      const unitDetails = normalizeUnitWithDetails(ri.rawUnit)
       const itemErrors: string[] = []
+      const itemWarnings: string[] = []
+
       if (!ri.rawName) itemErrors.push('Nome do insumo vazio')
-      if (q === null || q <= 0) itemErrors.push('Quantidade inválida')
-      if (!u) itemErrors.push(`Unidade "${ri.rawUnit}" inválida`)
+      if (q === null || q <= 0) itemErrors.push('Quantidade inválida (deve ser maior que zero)')
+      if (unitDetails.warning) itemWarnings.push(unitDetails.warning)
 
       return {
         rowIndex: ri.rowIndex,
         ingredientName: ri.rawName,
         quantity: q || 0,
-        unit: u || 'g',
+        unit: unitDetails.unit,
+        originalUnit: unitDetails.originalUnit,
+        unitWarning: unitDetails.warning,
         isValid: itemErrors.length === 0,
         error: itemErrors.length > 0 ? itemErrors.join(', ') : undefined,
+        warning: itemWarnings.length > 0 ? itemWarnings.join(', ') : undefined,
       }
     })
 
@@ -502,6 +522,7 @@ function parseBlockFormat(matrix: any[][], sheetName: string): RecipeSheetDetect
       isUpdate: false,
       isValid: true,
       errors: [],
+      warnings: [],
     })
   }
 
@@ -537,6 +558,8 @@ export function validateAndGroupRecipeRows(
       )
 
       const groupErrors: string[] = []
+      const groupWarnings: string[] = []
+
       if (!block.recipeName || block.recipeName === '(Sem nome de ficha)') {
         groupErrors.push('Nome da ficha técnica não informado')
       }
@@ -547,7 +570,9 @@ export function validateAndGroupRecipeRows(
       // Reconcilia cada item com a base de insumos cadastrada
       const reconciledItems = block.items.map((item) => {
         const itemErrors: string[] = []
+        const itemWarnings: string[] = []
         if (item.error) itemErrors.push(item.error)
+        if (item.warning) itemWarnings.push(item.warning)
 
         const normIngName = normalizeName(item.ingredientName)
         const matchedIngredient = existingIngredients.find(
@@ -556,11 +581,14 @@ export function validateAndGroupRecipeRows(
             normalizeName(ing.name) === normIngName,
         )
 
+        let isMissingIngredient = false
         if (!matchedIngredient && item.ingredientName) {
-          itemErrors.push(`Insumo "${item.ingredientName}" não cadastrado no sistema`)
+          isMissingIngredient = true
+          // Em vez de erro bloqueante, insumo faltante gera aviso para criação automática com R$ 0,00
+          itemWarnings.push(`Insumo novo a ser criado com R$ 0,00: "${item.ingredientName}"`)
         }
 
-        // Verifica compatibilidade de unidade
+        // Verifica compatibilidade de unidade (se já cadastrado)
         if (matchedIngredient && item.unit) {
           const ingU = matchedIngredient.unit
           const isMass = (u: MeasurementUnit) => u === 'kg' || u === 'g'
@@ -568,11 +596,17 @@ export function validateAndGroupRecipeRows(
           const isCount = (u: MeasurementUnit) => u === 'unidade'
 
           if (isMass(ingU) && !isMass(item.unit)) {
-            itemErrors.push(`Unidade "${item.unit}" incompatível com o insumo (${ingU})`)
+            itemWarnings.push(
+              `Unidade na ficha (${item.unit}) difere do insumo (${ingU}); custo proporcional pode exigir ajuste`,
+            )
           } else if (isVolume(ingU) && !isVolume(item.unit)) {
-            itemErrors.push(`Unidade "${item.unit}" incompatível com o insumo (${ingU})`)
+            itemWarnings.push(
+              `Unidade na ficha (${item.unit}) difere do insumo (${ingU}); custo proporcional pode exigir ajuste`,
+            )
           } else if (isCount(ingU) && !isCount(item.unit)) {
-            itemErrors.push(`Unidade "${item.unit}" incompatível com o insumo (unidade)`)
+            itemWarnings.push(
+              `Unidade na ficha (${item.unit}) difere do insumo (${ingU}); custo proporcional pode exigir ajuste`,
+            )
           }
         }
 
@@ -580,14 +614,26 @@ export function validateAndGroupRecipeRows(
         return {
           ...item,
           matchedIngredient,
+          isMissingIngredient,
           isValid,
           error: itemErrors.length > 0 ? itemErrors.join(', ') : undefined,
+          warning: itemWarnings.length > 0 ? itemWarnings.join(', ') : undefined,
         }
       })
 
       const hasInvalidItem = reconciledItems.some((i) => !i.isValid)
       if (hasInvalidItem) {
-        groupErrors.push('Contém insumos com erros de cadastro ou unidade')
+        groupErrors.push('Contém insumos com erros de preenchimento (nome ou quantidade)')
+      }
+
+      // Coleta avisos de insumos a criar ou unidades normalizadas
+      const missingCount = reconciledItems.filter((i) => i.isMissingIngredient).length
+      if (missingCount > 0) {
+        groupWarnings.push(`${missingCount} insumo(s) novo(s) serão criados com preço R$ 0,00`)
+      }
+      const unitWarnings = reconciledItems.filter((i) => i.unitWarning).map((i) => i.unitWarning!)
+      if (unitWarnings.length > 0) {
+        groupWarnings.push(...Array.from(new Set(unitWarnings)))
       }
 
       return {
@@ -597,6 +643,7 @@ export function validateAndGroupRecipeRows(
         isUpdate: !!matchedExisting,
         isValid: groupErrors.length === 0,
         errors: groupErrors,
+        warnings: groupWarnings,
       }
     })
   }
@@ -677,6 +724,7 @@ export function validateAndGroupRecipeRows(
         isUpdate: !!matchedExisting,
         isValid: true,
         errors: [],
+        warnings: [],
       })
     }
 
@@ -689,15 +737,16 @@ export function validateAndGroupRecipeRows(
 
     // Validação do ingrediente
     const itemErrors: string[] = []
+    const itemWarnings: string[] = []
     if (!rawIngredientName) {
       itemErrors.push('Nome do insumo está em branco')
     }
 
-    // Quantidade
+    // Quantidade com suporte a vírgula brasileira ("0,5", "1.500,50")
     let parsedQty: number | undefined
     if (rawQuantity !== undefined && rawQuantity !== null && rawQuantity !== '') {
-      const q = parseFloat(String(rawQuantity).replace(',', '.'))
-      if (isNaN(q) || q <= 0) {
+      const q = parseNumericValue(rawQuantity)
+      if (q === null || q <= 0) {
         itemErrors.push('Quantidade deve ser maior que zero')
       } else {
         parsedQty = q
@@ -706,10 +755,11 @@ export function validateAndGroupRecipeRows(
       itemErrors.push('Quantidade é obrigatória')
     }
 
-    // Unidade
-    const parsedUnit = normalizeUnit(rawUnit)
-    if (!parsedUnit) {
-      itemErrors.push(`Unidade "${rawUnit}" inválida (use kg, g, L, mL ou unidade)`)
+    // Unidade normalizada automaticamente com avisos informativos
+    const unitDetails = normalizeUnitWithDetails(rawUnit)
+    const parsedUnit = unitDetails.unit
+    if (unitDetails.warning) {
+      itemWarnings.push(unitDetails.warning)
     }
 
     // Busca insumo existente (normalização sem acentos)
@@ -719,8 +769,11 @@ export function validateAndGroupRecipeRows(
         areNamesEquivalent(ing.name, rawIngredientName) || normalizeName(ing.name) === normIngName,
     )
 
+    let isMissingIngredient = false
     if (!matchedIngredient && rawIngredientName) {
-      itemErrors.push(`Insumo "${rawIngredientName}" não cadastrado no sistema`)
+      isMissingIngredient = true
+      // Insumo faltante vira aviso informativo, não erro bloqueante
+      itemWarnings.push(`Insumo novo a ser criado com R$ 0,00: "${rawIngredientName}"`)
     }
 
     if (matchedIngredient && parsedUnit) {
@@ -730,11 +783,17 @@ export function validateAndGroupRecipeRows(
       const isCount = (u: MeasurementUnit) => u === 'unidade'
 
       if (isMass(ingU) && !isMass(parsedUnit)) {
-        itemErrors.push(`Unidade "${parsedUnit}" incompatível com o insumo (${ingU})`)
+        itemWarnings.push(
+          `Unidade na ficha (${parsedUnit}) difere do insumo (${ingU}); custo proporcional pode exigir ajuste`,
+        )
       } else if (isVolume(ingU) && !isVolume(parsedUnit)) {
-        itemErrors.push(`Unidade "${parsedUnit}" incompatível com o insumo (${ingU})`)
+        itemWarnings.push(
+          `Unidade na ficha (${parsedUnit}) difere do insumo (${ingU}); custo proporcional pode exigir ajuste`,
+        )
       } else if (isCount(ingU) && !isCount(parsedUnit)) {
-        itemErrors.push(`Unidade "${parsedUnit}" incompatível com o insumo (unidade)`)
+        itemWarnings.push(
+          `Unidade na ficha (${parsedUnit}) difere do insumo (${ingU}); custo proporcional pode exigir ajuste`,
+        )
       }
     }
 
@@ -744,9 +803,13 @@ export function validateAndGroupRecipeRows(
       rowIndex: index + 2,
       ingredientName: rawIngredientName,
       quantity: parsedQty || 0,
-      unit: parsedUnit || 'g',
+      unit: parsedUnit,
+      originalUnit: unitDetails.originalUnit,
+      unitWarning: unitDetails.warning,
       matchedIngredient,
+      isMissingIngredient,
       error: itemErrors.length > 0 ? itemErrors.join(', ') : undefined,
+      warning: itemWarnings.length > 0 ? itemWarnings.join(', ') : undefined,
       isValid: itemValid,
     })
   })
@@ -754,6 +817,8 @@ export function validateAndGroupRecipeRows(
   const result = Array.from(groupsMap.values())
   result.forEach((group) => {
     const groupErrors: string[] = []
+    const groupWarnings: string[] = []
+
     if (!group.recipeName || group.recipeName === '(Sem nome de ficha)') {
       groupErrors.push('Nome da ficha técnica não informado')
     }
@@ -762,10 +827,20 @@ export function validateAndGroupRecipeRows(
     }
     const hasInvalidItem = group.items.some((i) => !i.isValid)
     if (hasInvalidItem) {
-      groupErrors.push('Contém insumos com erros de cadastro ou unidade')
+      groupErrors.push('Contém insumos com erros de preenchimento (nome ou quantidade)')
+    }
+
+    const missingCount = group.items.filter((i) => i.isMissingIngredient).length
+    if (missingCount > 0) {
+      groupWarnings.push(`${missingCount} insumo(s) novo(s) serão criados com preço R$ 0,00`)
+    }
+    const unitWarnings = group.items.filter((i) => i.unitWarning).map((i) => i.unitWarning!)
+    if (unitWarnings.length > 0) {
+      groupWarnings.push(...Array.from(new Set(unitWarnings)))
     }
 
     group.errors = groupErrors
+    group.warnings = groupWarnings
     group.isValid = groupErrors.length === 0
   })
 
