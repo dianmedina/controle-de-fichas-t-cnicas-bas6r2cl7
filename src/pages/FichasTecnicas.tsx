@@ -769,7 +769,7 @@ export default function FichasTecnicas() {
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="r-labor">Custo de Mão de Obra da Batelada (R$)</Label>
+                <Label htmlFor="r-labor">Custo de Mão de Obra da Receita (R$)</Label>
                 <div className="relative">
                   <span className="absolute left-3 top-2.5 text-slate-400 text-sm">R$</span>
                   <Input

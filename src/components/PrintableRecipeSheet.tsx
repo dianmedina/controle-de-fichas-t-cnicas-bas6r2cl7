@@ -145,7 +145,7 @@ export const PrintableRecipeSheet: React.FC<PrintableRecipeSheetProps> = ({
 
               <div className="bg-slate-50 border border-slate-200 rounded p-1">
                 <span className="block text-[9px] uppercase font-bold text-slate-500">
-                  Custo Batelada
+                  Custo total da receita
                 </span>
                 <span className="text-xs font-bold text-slate-900">
                   {formatCurrency(recipe.totalCost)}
@@ -424,7 +424,7 @@ export const PrintableRecipeSheet: React.FC<PrintableRecipeSheetProps> = ({
                   )}
                   <tr className="bg-amber-100/70 border-t border-amber-300 text-[11px] font-extrabold text-amber-950">
                     <td colSpan={4} className="py-1 px-1.5 uppercase">
-                      Custo Final da Batelada:
+                      Custo total da receita:
                     </td>
                     <td className="py-1 px-1.5 text-right">{formatCurrency(recipe.totalCost)}</td>
                   </tr>

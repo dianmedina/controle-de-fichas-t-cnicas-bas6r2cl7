@@ -826,7 +826,7 @@ export default function FichaDetalhe() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label htmlFor="h-labor">Custo de Mão de Obra da Batelada (R$)</Label>
+                  <Label htmlFor="h-labor">Custo de Mão de Obra da Receita (R$)</Label>
                   <div className="relative">
                     <span className="absolute left-3 top-2.5 text-slate-400 text-sm">R$</span>
                     <Input
@@ -956,7 +956,7 @@ export default function FichaDetalhe() {
           <Card className="shadow-xs border-slate-200 bg-white">
             <CardHeader className="p-4 pb-1">
               <CardDescription className="text-xs font-semibold uppercase text-slate-500 flex items-center justify-between">
-                <span>Custo Total da Batelada</span>
+                <span>Custo total da receita</span>
                 <DollarSign className="h-4 w-4 text-slate-400" />
               </CardDescription>
               <CardTitle className="text-2xl font-bold text-slate-900">
@@ -1074,7 +1074,7 @@ export default function FichaDetalhe() {
               </div>
               <p className="text-xs text-slate-500 mt-1">
                 Fichas técnicas de acompanhamentos (ex.: arroz branco, farofa, vinagrete) cujo custo
-                é somado automaticamente à batelada deste prato.
+                é somado automaticamente ao custo total da receita deste prato.
               </p>
             </div>
             <Button
@@ -1996,7 +1996,7 @@ export default function FichaDetalhe() {
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label htmlFor="garnish-qty">Quantidade de Porções no Prato (Batelada) *</Label>
+                    <Label htmlFor="garnish-qty">Quantidade de Porções na Receita Total *</Label>
                     <Input
                       id="garnish-qty"
                       type="number"
@@ -2008,7 +2008,7 @@ export default function FichaDetalhe() {
                       required
                     />
                     <p className="text-[11px] text-slate-400">
-                      Informe quantas porções desta guarnição acompanham a batelada inteira do prato
+                      Informe quantas porções desta guarnição acompanham a receita total do prato
                       (ex.: se o prato rende {recipe?.yield_portions || 1} porções, informe{' '}
                       {recipe?.yield_portions || 1} porções de guarnição).
                     </p>
