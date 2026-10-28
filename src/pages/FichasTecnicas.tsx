@@ -78,8 +78,12 @@ export default function FichasTecnicas() {
   const [isImportOpen, setIsImportOpen] = useState(false)
 
   // Modal Exclusão
-  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
+  const [deleteConfirmRecipe, setDeleteConfirmRecipe] = useState<Recipe | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [checkingDependency, setCheckingDependency] = useState(false)
+  const [blockingUsages, setBlockingUsages] = useState<{ recipeId: string; recipeName: string }[]>(
+    [],
+  )
 
   const [formData, setFormData] = useState({
     name: '',
@@ -241,19 +245,40 @@ export default function FichasTecnicas() {
     }
   }
 
+  const handleStartDelete = async (recipe: Recipe) => {
+    setDeleteConfirmRecipe(recipe)
+    setBlockingUsages([])
+    setCheckingDependency(true)
+    try {
+      const usages = await recipesService.getUsageAsGarnish(recipe.id)
+      setBlockingUsages(usages)
+    } catch (err) {
+      console.error('Erro ao verificar dependências da ficha:', err)
+    } finally {
+      setCheckingDependency(false)
+    }
+  }
+
   const handleDelete = async () => {
-    if (!deleteConfirmId) return
+    if (!deleteConfirmRecipe) return
     try {
       setDeleting(true)
-      await recipesService.delete(deleteConfirmId)
-      toast({ title: 'Ficha técnica excluída!' })
-      setDeleteConfirmId(null)
-      loadData()
-    } catch (error) {
-      console.error('Erro ao excluir ficha:', error)
+      await recipesService.delete(deleteConfirmRecipe.id)
       toast({
-        title: 'Erro ao excluir',
-        description: 'Não foi possível excluir a ficha técnica.',
+        title: 'Ficha técnica excluída com sucesso!',
+        description: `"${deleteConfirmRecipe.name}" foi removida do sistema.`,
+      })
+      setDeleteConfirmRecipe(null)
+      setBlockingUsages([])
+      loadData()
+    } catch (error: any) {
+      console.error('Erro ao excluir ficha:', error)
+      const isGarnishBlock = error?.isGarnishDependency || error?.message?.includes('guarnição')
+      toast({
+        title: isGarnishBlock ? 'Não é possível excluir' : 'Erro ao excluir ficha',
+        description:
+          error?.message ||
+          'Não foi possível excluir a ficha técnica. Verifique se há vínculos pendentes.',
         variant: 'destructive',
       })
     } finally {
@@ -558,7 +583,7 @@ export default function FichasTecnicas() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => setDeleteConfirmId(recipe.id)}
+                          onClick={() => handleStartDelete(recipe)}
                           className="h-8 w-8 text-slate-400 hover:text-red-600 hover:bg-red-50"
                           title="Excluir ficha"
                         >
@@ -710,23 +735,94 @@ export default function FichasTecnicas() {
       </Dialog>
 
       {/* Modal Confirmação de Exclusão */}
-      <Dialog open={!!deleteConfirmId} onOpenChange={() => setDeleteConfirmId(null)}>
+      <Dialog
+        open={!!deleteConfirmRecipe}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteConfirmRecipe(null)
+            setBlockingUsages([])
+          }
+        }}
+      >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Confirmar Exclusão</DialogTitle>
+            <DialogTitle className="flex items-center gap-2 text-slate-900">
+              <Trash2 className="h-5 w-5 text-red-600" />
+              Confirmar Exclusão
+            </DialogTitle>
             <DialogDescription>
-              Tem certeza que deseja excluir esta ficha técnica? Essa ação removerá também a
-              composição de insumos cadastrada.
+              {deleteConfirmRecipe && (
+                <span>
+                  Você está prestes a excluir a ficha técnica{' '}
+                  <strong className="text-slate-800 font-semibold">
+                    "{deleteConfirmRecipe.name}"
+                  </strong>
+                  .
+                </span>
+              )}
             </DialogDescription>
           </DialogHeader>
+
+          <div className="py-2 space-y-3">
+            {checkingDependency ? (
+              <div className="flex items-center gap-2 p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs text-slate-500">
+                <Loader2 className="h-4 w-4 animate-spin text-amber-600" />
+                <span>Verificando se esta ficha é utilizada em outros pratos...</span>
+              </div>
+            ) : blockingUsages.length > 0 ? (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900 space-y-2">
+                <div className="font-semibold flex items-center gap-1.5 text-amber-800">
+                  <span className="inline-block w-2 h-2 rounded-full bg-amber-600" />
+                  Esta ficha não pode ser excluída agora
+                </div>
+                <p className="text-slate-700">
+                  Ela está sendo utilizada como guarnição / sub-ficha nos seguintes pratos:
+                </p>
+                <ul className="list-disc pl-5 space-y-1 font-medium text-slate-900">
+                  {blockingUsages.map((u) => (
+                    <li key={u.recipeId}>{u.recipeName}</li>
+                  ))}
+                </ul>
+                <p className="text-slate-600 pt-1">
+                  Para conseguir excluí-la, primeiro acesse esses pratos e remova este
+                  acompanhamento da lista de itens.
+                </p>
+              </div>
+            ) : (
+              <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs text-slate-600 space-y-1.5">
+                <p>
+                  Esta ação é irreversível. A composição de insumos desta ficha e seu histórico de
+                  custos serão removidos.
+                </p>
+                <p className="text-slate-500">
+                  Eventuais registros de vendas associados também serão desvinculados com segurança.
+                </p>
+              </div>
+            )}
+          </div>
+
           <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" onClick={() => setDeleteConfirmId(null)} disabled={deleting}>
-              Cancelar
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDeleteConfirmRecipe(null)
+                setBlockingUsages([])
+              }}
+              disabled={deleting}
+            >
+              {blockingUsages.length > 0 ? 'Entendido / Fechar' : 'Cancelar'}
             </Button>
-            <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
-              {deleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Excluir Ficha
-            </Button>
+            {blockingUsages.length === 0 && (
+              <Button
+                variant="destructive"
+                onClick={handleDelete}
+                disabled={deleting || checkingDependency}
+                className="bg-red-600 hover:bg-red-700 text-white"
+              >
+                {deleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Sim, Excluir Ficha
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -57,7 +57,92 @@ export const recipesService = {
     return pb.files.getUrl(recipe as never, filename, thumb ? { thumb } : undefined)
   },
 
+  /**
+   * Verifica se esta ficha técnica está sendo utilizada como guarnição/sub-ficha
+   * em outros pratos ou receitas.
+   * Retorna os nomes das receitas dependentes.
+   */
+  async getUsageAsGarnish(recipeId: string): Promise<{ recipeId: string; recipeName: string }[]> {
+    try {
+      const referencingItems = await pb.collection('recipe_items').getFullList<RecipeItem>({
+        filter: `sub_recipe_id = "${recipeId}"`,
+        expand: 'recipe_id',
+      })
+
+      const map = new Map<string, string>()
+      for (const item of referencingItems) {
+        if (item.recipe_id) {
+          const parentRecipe = (item.expand as any)?.recipe_id as Recipe | undefined
+          const name = parentRecipe?.name || item.recipe_id
+          map.set(item.recipe_id, name)
+        }
+      }
+
+      return Array.from(map.entries()).map(([rId, rName]) => ({
+        recipeId: rId,
+        recipeName: rName,
+      }))
+    } catch (err) {
+      console.warn('Erro ao consultar uso como guarnição:', err)
+      return []
+    }
+  },
+
+  /**
+   * Exclui uma ficha técnica de forma segura e completa:
+   * 1. Verifica se a ficha está sendo usada como guarnição em outros pratos; se estiver,
+   *    bloqueia e lança erro descritivo listando os pratos dependentes.
+   * 2. Remove em lote ou sequencialmente os recipe_items filhos da própria ficha
+   *    (para garantir que itens não fiquem orfãos caso cascade falhe).
+   * 3. Remove eventuais lançamentos em sales associados.
+   * 4. Exclui o registro da receita.
+   */
   async delete(id: string): Promise<boolean> {
+    // 1. Verifica bloqueio por dependência como guarnição
+    const usages = await this.getUsageAsGarnish(id)
+    if (usages.length > 0) {
+      const names = usages.map((u) => `"${u.recipeName}"`).join(', ')
+      const err: any = new Error(
+        `Esta ficha técnica não pode ser excluída porque é utilizada como guarnição nos seguintes pratos: ${names}. Remova a guarnição desses pratos antes de excluir.`,
+      )
+      err.isGarnishDependency = true
+      err.usedInRecipes = usages
+      throw err
+    }
+
+    // 2. Remove os itens da própria receita (recipe_items) para não deixar orfãos
+    try {
+      const items = await pb.collection('recipe_items').getFullList<RecipeItem>({
+        filter: `recipe_id = "${id}"`,
+      })
+      for (const it of items) {
+        try {
+          await pb.collection('recipe_items').delete(it.id)
+        } catch (_) {
+          /* continua */
+        }
+      }
+    } catch (_) {
+      /* se falhar ao listar, segue para tentar deletar a receita */
+    }
+
+    // 3. Remove eventuais registros de vendas associados
+    try {
+      const sales = await pb.collection('sales').getFullList({
+        filter: `recipe_id = "${id}"`,
+      })
+      for (const s of sales) {
+        try {
+          await pb.collection('sales').delete(s.id)
+        } catch (_) {
+          /* continua */
+        }
+      }
+    } catch (_) {
+      /* segue */
+    }
+
+    // 4. Exclui a ficha técnica
     await pb.collection('recipes').delete(id)
     return true
   },
