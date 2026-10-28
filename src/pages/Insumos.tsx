@@ -5,6 +5,7 @@ import {
   IngredientPriceHistory,
   MeasurementUnit,
   formatCurrency,
+  getEffectiveIngredientPrice,
 } from '@/types/restaurant'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -82,11 +83,20 @@ export default function Insumos() {
   const [formData, setFormData] = useState({
     name: '',
     price: '',
+    reduction_percent: '',
     unit: 'kg' as MeasurementUnit,
     category: '',
     supplier: '',
     min_stock: '',
   })
+
+  // Preço de custo após redução calculado em tempo real
+  const effectiveCostPreview = useMemo(() => {
+    const p = parseFloat(formData.price.replace(',', '.'))
+    const red = parseFloat(formData.reduction_percent.replace(',', '.'))
+    if (isNaN(p) || p < 0) return 0
+    return getEffectiveIngredientPrice(p, isNaN(red) ? 0 : red)
+  }, [formData.price, formData.reduction_percent])
 
   const loadIngredients = async () => {
     try {
@@ -133,6 +143,7 @@ export default function Insumos() {
     setFormData({
       name: '',
       price: '',
+      reduction_percent: '',
       unit: 'kg',
       category: '',
       supplier: '',
@@ -147,6 +158,10 @@ export default function Insumos() {
     setFormData({
       name: ing.name,
       price: ing.price.toString(),
+      reduction_percent:
+        ing.reduction_percent !== undefined && ing.reduction_percent !== null
+          ? ing.reduction_percent.toString()
+          : '',
       unit: ing.unit,
       category: ing.category,
       supplier: ing.supplier || '',
@@ -187,6 +202,22 @@ export default function Insumos() {
       return
     }
 
+    let reductionNum: number | undefined
+    if (formData.reduction_percent.trim()) {
+      const parsedRed = parseFloat(formData.reduction_percent.replace(',', '.'))
+      if (isNaN(parsedRed) || parsedRed < 0 || parsedRed > 100) {
+        toast({
+          title: 'Redução percentual inválida',
+          description: 'A redução deve ser um valor entre 0 e 100%.',
+          variant: 'destructive',
+        })
+        return
+      }
+      reductionNum = parsedRed
+    } else {
+      reductionNum = 0
+    }
+
     const minStockNum = formData.min_stock
       ? parseFloat(formData.min_stock.replace(',', '.'))
       : undefined
@@ -197,6 +228,7 @@ export default function Insumos() {
         await ingredientsService.update(editingIngredient.id, {
           name: formData.name.trim(),
           price: priceNum,
+          reduction_percent: reductionNum,
           unit: formData.unit,
           category: formData.category.trim(),
           supplier: formData.supplier.trim() || undefined,
@@ -207,6 +239,7 @@ export default function Insumos() {
         await ingredientsService.create({
           name: formData.name.trim(),
           price: priceNum,
+          reduction_percent: reductionNum,
           unit: formData.unit,
           category: formData.category.trim(),
           supplier: formData.supplier.trim() || undefined,
@@ -395,6 +428,12 @@ export default function Insumos() {
                   <TableHead className="font-semibold text-slate-700 text-right">
                     Preço de Compra
                   </TableHead>
+                  <TableHead className="font-semibold text-slate-700 text-center">
+                    Redução (%)
+                  </TableHead>
+                  <TableHead className="font-semibold text-slate-700 text-right text-amber-900 bg-amber-50/50">
+                    Preço c/ Redução
+                  </TableHead>
                   <TableHead className="font-semibold text-slate-700">Unidade Base</TableHead>
                   <TableHead className="font-semibold text-slate-700">Fornecedor</TableHead>
                   <TableHead className="font-semibold text-slate-700 text-center">
@@ -404,62 +443,104 @@ export default function Insumos() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredIngredients.map((ing) => (
-                  <TableRow key={ing.id} className="hover:bg-slate-50/50">
-                    <TableCell className="font-medium text-slate-900">{ing.name}</TableCell>
-                    <TableCell>
-                      <Badge
-                        variant="secondary"
-                        className="bg-slate-100 text-slate-700 font-normal"
+                {filteredIngredients.map((ing) => {
+                  const effectivePrice = getEffectiveIngredientPrice(
+                    ing.price,
+                    ing.reduction_percent,
+                  )
+                  const hasReduction = !!(ing.reduction_percent && ing.reduction_percent > 0)
+
+                  return (
+                    <TableRow key={ing.id} className="hover:bg-slate-50/50">
+                      <TableCell className="font-medium text-slate-900">
+                        <div>
+                          <span>{ing.name}</span>
+                          {hasReduction && (
+                            <span className="block text-[11px] text-emerald-700 font-medium">
+                              Economia de {formatCurrency(ing.price - effectivePrice)} / {ing.unit}
+                            </span>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant="secondary"
+                          className="bg-slate-100 text-slate-700 font-normal"
+                        >
+                          {ing.category}
+                        </Badge>
+                      </TableCell>
+                      <TableCell
+                        className={`text-right text-sm ${hasReduction ? 'text-slate-500 line-through' : 'font-semibold text-slate-900'}`}
                       >
-                        {ing.category}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right font-semibold text-slate-900">
-                      {formatCurrency(ing.price)}
-                      <span className="text-xs text-slate-400 font-normal ml-1">/ {ing.unit}</span>
-                    </TableCell>
-                    <TableCell className="text-slate-600">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-50 text-amber-800 border border-amber-200">
-                        {ing.unit}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-slate-500 text-sm">
-                      {ing.supplier || <span className="text-slate-300 italic">Não informado</span>}
-                    </TableCell>
-                    <TableCell className="text-center text-slate-600 text-sm">
-                      {ing.min_stock !== undefined && ing.min_stock !== null ? (
-                        <span>
-                          {ing.min_stock} {ing.unit}
+                        {formatCurrency(ing.price)}
+                        <span className="text-xs text-slate-400 font-normal ml-1">
+                          / {ing.unit}
                         </span>
-                      ) : (
-                        <span className="text-slate-300">-</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleOpenEdit(ing)}
-                          className="h-8 w-8 text-slate-600 hover:text-amber-700 hover:bg-amber-50"
-                          title="Editar insumo"
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {hasReduction ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                            {ing.reduction_percent}%
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 text-xs">0%</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right font-bold text-slate-950 bg-amber-50/40">
+                        <span
+                          className={hasReduction ? 'text-emerald-700 font-bold' : 'text-slate-900'}
                         >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => setDeleteConfirmId(ing.id)}
-                          className="h-8 w-8 text-slate-400 hover:text-red-600 hover:bg-red-50"
-                          title="Excluir insumo"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                          {formatCurrency(effectivePrice)}
+                        </span>
+                        <span className="text-xs text-slate-400 font-normal ml-1">
+                          / {ing.unit}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-slate-600">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-50 text-amber-800 border border-amber-200">
+                          {ing.unit}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-slate-500 text-sm">
+                        {ing.supplier || (
+                          <span className="text-slate-300 italic">Não informado</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-center text-slate-600 text-sm">
+                        {ing.min_stock !== undefined && ing.min_stock !== null ? (
+                          <span>
+                            {ing.min_stock} {ing.unit}
+                          </span>
+                        ) : (
+                          <span className="text-slate-300">-</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleOpenEdit(ing)}
+                            className="h-8 w-8 text-slate-600 hover:text-amber-700 hover:bg-amber-50"
+                            title="Editar insumo"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setDeleteConfirmId(ing.id)}
+                            className="h-8 w-8 text-slate-400 hover:text-red-600 hover:bg-red-50"
+                            title="Excluir insumo"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
               </TableBody>
             </Table>
           </div>
@@ -489,7 +570,7 @@ export default function Insumos() {
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="space-y-1.5">
                   <Label htmlFor="price">Preço de Compra (R$) *</Label>
                   <div className="relative">
@@ -505,6 +586,28 @@ export default function Insumos() {
                       onChange={(e) => setFormData({ ...formData, price: e.target.value })}
                       required
                     />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="reduction_percent">Redução (%)</Label>
+                  <div className="relative">
+                    <Input
+                      id="reduction_percent"
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      max="100"
+                      placeholder="0"
+                      className="pr-8"
+                      value={formData.reduction_percent}
+                      onChange={(e) =>
+                        setFormData({ ...formData, reduction_percent: e.target.value })
+                      }
+                    />
+                    <span className="absolute right-3 top-2.5 text-slate-400 text-sm font-semibold">
+                      %
+                    </span>
                   </div>
                 </div>
 
@@ -527,6 +630,29 @@ export default function Insumos() {
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+              </div>
+
+              {/* Card de Cálculo em Tempo Real do Novo Preço de Custo */}
+              <div className="p-3.5 bg-amber-50/70 border border-amber-200 rounded-xl flex items-center justify-between">
+                <div>
+                  <span className="text-xs uppercase font-bold text-amber-900 tracking-wide block">
+                    Novo Preço de Custo após Redução
+                  </span>
+                  <span className="text-[11px] text-amber-700">
+                    Este valor será considerado nos custos e porções de todas as fichas técnicas
+                  </span>
+                </div>
+                <div className="text-right">
+                  <span className="text-lg font-black text-amber-950 font-mono">
+                    {formatCurrency(effectiveCostPreview)}
+                  </span>
+                  <span className="text-xs text-amber-700 ml-1">/ {formData.unit}</span>
+                  {parseFloat(formData.reduction_percent) > 0 && (
+                    <span className="block text-[11px] text-emerald-700 font-semibold">
+                      - {formData.reduction_percent}% de redução aplicada
+                    </span>
+                  )}
                 </div>
               </div>
 

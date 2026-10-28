@@ -10,6 +10,7 @@ import {
   calculateItemCost,
   formatCurrency,
   formatPercent,
+  getEffectiveIngredientPrice,
 } from '@/types/restaurant'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -853,18 +854,29 @@ export default function FichaDetalhe() {
                 <TableBody>
                   {items.map((item) => {
                     const ing = item.expand?.ingredient_id
-                    const itemCost = ing
-                      ? calculateItemCost(item.quantity, item.unit, ing.price, ing.unit)
+                    const itemCost = ing ? calculateItemCost(item.quantity, item.unit, ing) : 0
+                    const effPrice = ing
+                      ? getEffectiveIngredientPrice(ing.price, ing.reduction_percent)
                       : 0
+                    const hasRed = !!(ing?.reduction_percent && ing.reduction_percent > 0)
                     const pct =
                       costSummary.totalCost > 0 ? (itemCost / costSummary.totalCost) * 100 : 0
 
                     return (
                       <TableRow key={item.id} className="hover:bg-slate-50/50">
                         <TableCell className="font-medium text-slate-900">
-                          {ing?.name || (
-                            <span className="text-slate-400">Insumo não encontrado</span>
-                          )}
+                          <div>
+                            <span>
+                              {ing?.name || (
+                                <span className="text-slate-400">Insumo não encontrado</span>
+                              )}
+                            </span>
+                            {hasRed && (
+                              <span className="block text-[11px] text-emerald-700 font-medium">
+                                Redução de {ing.reduction_percent}% aplicada
+                              </span>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell>
                           <Badge
@@ -882,10 +894,22 @@ export default function FichaDetalhe() {
                         </TableCell>
                         <TableCell className="text-right text-slate-600 text-sm">
                           {ing ? (
-                            <>
-                              {formatCurrency(ing.price)}
-                              <span className="text-xs text-slate-400 ml-1">/ {ing.unit}</span>
-                            </>
+                            hasRed ? (
+                              <div>
+                                <span className="font-bold text-emerald-800">
+                                  {formatCurrency(effPrice)}
+                                </span>
+                                <span className="text-xs text-slate-400 ml-1">/ {ing.unit}</span>
+                                <span className="block text-[10px] text-slate-400 line-through">
+                                  Base: {formatCurrency(ing.price)}
+                                </span>
+                              </div>
+                            ) : (
+                              <>
+                                {formatCurrency(ing.price)}
+                                <span className="text-xs text-slate-400 ml-1">/ {ing.unit}</span>
+                              </>
+                            )
                           ) : (
                             '-'
                           )}
@@ -1342,11 +1366,16 @@ export default function FichaDetalhe() {
                     <SelectValue placeholder="Selecione o insumo..." />
                   </SelectTrigger>
                   <SelectContent className="max-h-60">
-                    {allIngredients.map((ing) => (
-                      <SelectItem key={ing.id} value={ing.id}>
-                        {ing.name} ({formatCurrency(ing.price)} / {ing.unit})
-                      </SelectItem>
-                    ))}
+                    {allIngredients.map((ing) => {
+                      const eff = getEffectiveIngredientPrice(ing.price, ing.reduction_percent)
+                      const hasRed = !!(ing.reduction_percent && ing.reduction_percent > 0)
+                      return (
+                        <SelectItem key={ing.id} value={ing.id}>
+                          {ing.name} ({formatCurrency(eff)} / {ing.unit}
+                          {hasRed ? ` - ${ing.reduction_percent}% red.` : ''})
+                        </SelectItem>
+                      )
+                    })}
                   </SelectContent>
                 </Select>
               </div>
@@ -1395,7 +1424,7 @@ export default function FichaDetalhe() {
                       const ing = allIngredients.find((i) => i.id === selectedIngredientId)
                       const q = parseFloat(itemQuantity.replace(',', '.')) || 0
                       if (!ing) return 'R$ 0,00'
-                      return formatCurrency(calculateItemCost(q, itemUnit, ing.price, ing.unit))
+                      return formatCurrency(calculateItemCost(q, itemUnit, ing))
                     })()}
                   </span>
                 </div>

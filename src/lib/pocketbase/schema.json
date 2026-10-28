@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-28T00:15:38.023Z",
+  "generatedAt": "2026-10-28T00:29:26.710Z",
   "collections": [
     {
       "name": "users",
@@ -93,6 +93,12 @@
           "system": false
         },
         {
+          "name": "reduction_percent",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
           "name": "created",
           "type": "autodate",
           "required": false,
@@ -105,6 +111,12 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "reduction_percent",
+          "type": "number",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [

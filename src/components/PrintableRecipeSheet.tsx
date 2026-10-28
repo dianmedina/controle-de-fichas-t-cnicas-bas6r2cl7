@@ -1,7 +1,12 @@
 import React from 'react'
 import { RecipeWithCost } from '@/services/recipes'
 import { recipesService } from '@/services/recipes'
-import { calculateItemCost, formatCurrency, formatPercent } from '@/types/restaurant'
+import {
+  calculateItemCost,
+  formatCurrency,
+  formatPercent,
+  getEffectiveIngredientPrice,
+} from '@/types/restaurant'
 import { ChefHat, CookingPot, Utensils, Scale, DollarSign, Image as ImageIcon } from 'lucide-react'
 
 interface PrintableRecipeSheetProps {
@@ -154,6 +159,7 @@ export const PrintableRecipeSheet: React.FC<PrintableRecipeSheetProps> = ({
                   {!hideCosts && (
                     <>
                       <th className="py-1 px-1 text-right">Preço Base</th>
+                      <th className="py-1 px-1 text-right text-amber-900">Preço c/ Redução</th>
                       <th className="py-1 px-1.5 text-right">Custo</th>
                     </>
                   )}
@@ -162,9 +168,12 @@ export const PrintableRecipeSheet: React.FC<PrintableRecipeSheetProps> = ({
               <tbody className="divide-y divide-slate-200">
                 {recipe.items.map((item, idx) => {
                   const ing = item.expand?.ingredient_id
-                  const cost = ing
-                    ? calculateItemCost(item.quantity, item.unit, ing.price, ing.unit)
+                  const cost = ing ? calculateItemCost(item.quantity, item.unit, ing) : 0
+                  const effPrice = ing
+                    ? getEffectiveIngredientPrice(ing.price, ing.reduction_percent)
                     : 0
+                  const hasRed = !!(ing?.reduction_percent && ing.reduction_percent > 0)
+
                   return (
                     <tr
                       key={item.id || idx}
@@ -186,8 +195,26 @@ export const PrintableRecipeSheet: React.FC<PrintableRecipeSheetProps> = ({
                       </td>
                       {!hideCosts && (
                         <>
-                          <td className="py-1 px-1 text-right text-slate-600 text-[10px] whitespace-nowrap">
+                          <td className="py-1 px-1 text-right text-slate-500 text-[10px] whitespace-nowrap">
                             {ing ? `${formatCurrency(ing.price)}/${ing.unit}` : '-'}
+                          </td>
+                          <td className="py-1 px-1 text-right font-medium text-slate-900 text-[10px] whitespace-nowrap">
+                            {ing ? (
+                              hasRed ? (
+                                <span>
+                                  <span className="font-bold text-emerald-800">
+                                    {formatCurrency(effPrice)}
+                                  </span>
+                                  <span className="text-[8px] text-emerald-700 ml-0.5">
+                                    (-{ing.reduction_percent}%)
+                                  </span>
+                                </span>
+                              ) : (
+                                `${formatCurrency(effPrice)}/${ing.unit}`
+                              )
+                            ) : (
+                              '-'
+                            )}
                           </td>
                           <td className="py-1 px-1.5 text-right font-bold text-slate-950 whitespace-nowrap">
                             {formatCurrency(cost)}
@@ -201,8 +228,8 @@ export const PrintableRecipeSheet: React.FC<PrintableRecipeSheetProps> = ({
               {!hideCosts ? (
                 <tfoot>
                   <tr className="bg-slate-100 border-t-2 border-slate-300 text-[10px] font-bold">
-                    <td colSpan={3} className="py-1 px-1.5 uppercase text-slate-700">
-                      Subtotal Insumos:
+                    <td colSpan={4} className="py-1 px-1.5 uppercase text-slate-700">
+                      Subtotal Insumos (c/ redução):
                     </td>
                     <td className="py-1 px-1.5 text-right text-slate-900 font-extrabold">
                       {formatCurrency(recipe.ingredientsCost)}
@@ -210,7 +237,7 @@ export const PrintableRecipeSheet: React.FC<PrintableRecipeSheetProps> = ({
                   </tr>
                   {recipe.laborCost > 0 && (
                     <tr className="bg-slate-100 border-t border-slate-200 text-[10px] font-bold">
-                      <td colSpan={3} className="py-1 px-1.5 uppercase text-slate-700">
+                      <td colSpan={4} className="py-1 px-1.5 uppercase text-slate-700">
                         Mão de Obra de Preparo:
                       </td>
                       <td className="py-1 px-1.5 text-right text-slate-900 font-extrabold">
@@ -219,7 +246,7 @@ export const PrintableRecipeSheet: React.FC<PrintableRecipeSheetProps> = ({
                     </tr>
                   )}
                   <tr className="bg-amber-100/70 border-t border-amber-300 text-[11px] font-extrabold text-amber-950">
-                    <td colSpan={3} className="py-1 px-1.5 uppercase">
+                    <td colSpan={4} className="py-1 px-1.5 uppercase">
                       Custo Final da Batelada:
                     </td>
                     <td className="py-1 px-1.5 text-right">{formatCurrency(recipe.totalCost)}</td>

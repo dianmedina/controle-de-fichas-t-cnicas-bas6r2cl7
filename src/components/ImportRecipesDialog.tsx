@@ -1,5 +1,11 @@
 import React, { useState, useRef } from 'react'
-import { Recipe, Ingredient, formatCurrency, calculateItemCost } from '@/types/restaurant'
+import {
+  Recipe,
+  Ingredient,
+  formatCurrency,
+  calculateItemCost,
+  getEffectiveIngredientPrice,
+} from '@/types/restaurant'
 import {
   parseExcelRecipesFile,
   validateAndGroupRecipeRows,
@@ -290,12 +296,7 @@ export function ImportRecipesDialog({
     let allPriced = true
     for (const item of group.items) {
       if (item.matchedIngredient) {
-        const c = calculateItemCost(
-          item.quantity,
-          item.unit,
-          item.matchedIngredient.price,
-          item.matchedIngredient.unit,
-        )
+        const c = calculateItemCost(item.quantity, item.unit, item.matchedIngredient)
         ingCost += c
       } else {
         allPriced = false
@@ -794,8 +795,14 @@ export function ImportRecipesDialog({
                               {group.items.map((it, idx) => {
                                 const ing = it.matchedIngredient
                                 const itemCost = ing
-                                  ? calculateItemCost(it.quantity, it.unit, ing.price, ing.unit)
+                                  ? calculateItemCost(it.quantity, it.unit, ing)
                                   : null
+                                const effPrice = ing
+                                  ? getEffectiveIngredientPrice(ing.price, ing.reduction_percent)
+                                  : 0
+                                const hasRed = !!(
+                                  ing?.reduction_percent && ing.reduction_percent > 0
+                                )
 
                                 return (
                                   <TableRow
@@ -812,12 +819,20 @@ export function ImportRecipesDialog({
                                     </TableCell>
                                     <TableCell className="text-xs py-1.5">
                                       {ing ? (
-                                        <span className="text-emerald-800 font-semibold">
-                                          {ing.name}{' '}
-                                          <span className="text-[11px] text-slate-400 font-normal">
-                                            ({ing.unit})
+                                        <div>
+                                          <span className="text-emerald-800 font-semibold">
+                                            {ing.name}{' '}
+                                            <span className="text-[11px] text-slate-400 font-normal">
+                                              ({ing.unit})
+                                            </span>
                                           </span>
-                                        </span>
+                                          {hasRed && (
+                                            <span className="block text-[10px] text-emerald-700">
+                                              c/ {ing.reduction_percent}% de redução (efetivo:{' '}
+                                              {formatCurrency(effPrice)}/{ing.unit})
+                                            </span>
+                                          )}
+                                        </div>
                                       ) : (
                                         <span className="text-red-600 font-medium">
                                           Não cadastrado
@@ -828,7 +843,24 @@ export function ImportRecipesDialog({
                                       {it.quantity} {it.unit}
                                     </TableCell>
                                     <TableCell className="text-xs text-right text-slate-600 py-1.5">
-                                      {ing ? `${formatCurrency(ing.price)}/${ing.unit}` : '-'}
+                                      {ing ? (
+                                        hasRed ? (
+                                          <span
+                                            title={`Base: ${formatCurrency(ing.price)} c/ -${ing.reduction_percent}%`}
+                                          >
+                                            <span className="font-bold text-emerald-800">
+                                              {formatCurrency(effPrice)}
+                                            </span>
+                                            <span className="text-[10px] text-slate-400 block line-through">
+                                              {formatCurrency(ing.price)}
+                                            </span>
+                                          </span>
+                                        ) : (
+                                          `${formatCurrency(ing.price)}/${ing.unit}`
+                                        )
+                                      ) : (
+                                        '-'
+                                      )}
                                     </TableCell>
                                     <TableCell className="text-xs text-right font-semibold text-slate-900 py-1.5">
                                       {itemCost !== null ? formatCurrency(itemCost) : '-'}

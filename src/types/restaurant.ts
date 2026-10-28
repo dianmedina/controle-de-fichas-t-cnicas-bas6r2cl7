@@ -18,8 +18,27 @@ export interface Ingredient {
   category: string
   supplier?: string
   min_stock?: number
+  reduction_percent?: number
   created?: string
   updated?: string
+}
+
+/**
+ * Retorna o preço de custo efetivo do insumo após aplicar a porcentagem de redução (desconto).
+ * Fórmula: preço × (1 - redução / 100).
+ * Se a redução for 0, ausente ou inválida, retorna o próprio preço base.
+ */
+export function getEffectiveIngredientPrice(
+  price: number | undefined | null,
+  reductionPercent: number | undefined | null,
+): number {
+  const basePrice = typeof price === 'number' && !isNaN(price) && price >= 0 ? price : 0
+  const reduction =
+    typeof reductionPercent === 'number' && !isNaN(reductionPercent) && reductionPercent > 0
+      ? Math.min(Math.max(reductionPercent, 0), 100)
+      : 0
+  if (reduction === 0) return basePrice
+  return basePrice * (1 - reduction / 100)
 }
 
 export type RecipeType = 'prato' | 'guarnicao'
@@ -73,36 +92,56 @@ export interface Sale {
 export function calculateItemCost(
   quantityUsed: number,
   usedUnit: MeasurementUnit,
-  ingredientPrice: number,
-  ingredientUnit: MeasurementUnit,
+  ingredientPriceOrIngredient: number | Ingredient,
+  ingredientUnit?: MeasurementUnit,
+  reductionPercent?: number,
 ): number {
-  if (!quantityUsed || quantityUsed <= 0 || !ingredientPrice || ingredientPrice <= 0) {
+  if (!quantityUsed || quantityUsed <= 0) {
+    return 0
+  }
+
+  let finalPrice = 0
+  let baseUnit: MeasurementUnit = usedUnit
+
+  if (typeof ingredientPriceOrIngredient === 'object' && ingredientPriceOrIngredient !== null) {
+    const ing = ingredientPriceOrIngredient
+    baseUnit = ing.unit
+    finalPrice = getEffectiveIngredientPrice(ing.price, ing.reduction_percent)
+  } else {
+    baseUnit = ingredientUnit || usedUnit
+    finalPrice = getEffectiveIngredientPrice(
+      typeof ingredientPriceOrIngredient === 'number' ? ingredientPriceOrIngredient : 0,
+      reductionPercent,
+    )
+  }
+
+  if (!finalPrice || finalPrice <= 0) {
     return 0
   }
 
   // Se as unidades forem iguais
-  if (usedUnit === ingredientUnit) {
-    return quantityUsed * ingredientPrice
+  if (usedUnit === baseUnit) {
+    return quantityUsed * finalPrice
   }
 
   // Massa: g -> kg ou kg -> g
-  if (usedUnit === 'g' && ingredientUnit === 'kg') {
-    return (quantityUsed / 1000) * ingredientPrice
+  if (usedUnit === 'g' && baseUnit === 'kg') {
+    return (quantityUsed / 1000) * finalPrice
   }
-  if (usedUnit === 'kg' && ingredientUnit === 'g') {
-    return quantityUsed * 1000 * ingredientPrice
+  if (usedUnit === 'kg' && baseUnit === 'g') {
+    return quantityUsed * 1000 * finalPrice
   }
 
   // Volume: mL -> L ou L -> mL
-  if (usedUnit === 'mL' && ingredientUnit === 'L') {
-    return (quantityUsed / 1000) * ingredientPrice
+  if (usedUnit === 'mL' && baseUnit === 'L') {
+    return (quantityUsed / 1000) * finalPrice
   }
-  if (usedUnit === 'L' && ingredientUnit === 'mL') {
-    return quantityUsed * 1000 * ingredientPrice
+  if (usedUnit === 'L' && baseUnit === 'mL') {
+    return quantityUsed * 1000 * finalPrice
   }
 
   // Caso padrão / unidades incompatíveis (ex: unidade usada em receita por unidade)
-  return quantityUsed * ingredientPrice
+  return quantityUsed * finalPrice
 }
 
 export function formatCurrency(value: number | undefined | null): string {

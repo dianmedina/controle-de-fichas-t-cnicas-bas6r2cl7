@@ -1,11 +1,12 @@
 import * as XLSX from 'xlsx'
-import { Ingredient, MeasurementUnit } from '@/types/restaurant'
+import { Ingredient, MeasurementUnit, getEffectiveIngredientPrice } from '@/types/restaurant'
 import { normalizeString } from '@/lib/excelSales'
 
 export interface ParsedIngredientRow {
   rowIndex: number
   rawName: string
   rawPrice: any
+  rawReductionPercent?: any
   rawUnit: string
   rawCategory: string
   rawSupplier?: string
@@ -13,6 +14,8 @@ export interface ParsedIngredientRow {
   // Campos normalizados
   normalizedName?: string
   normalizedPrice?: number
+  normalizedReductionPercent?: number
+  effectivePrice?: number
   normalizedUnit?: MeasurementUnit
   normalizedCategory?: string
   normalizedSupplier?: string
@@ -30,6 +33,7 @@ export interface IngredientSheetDetectionResult {
   detectedColumns: {
     nameCol: string
     priceCol: string
+    reductionCol?: string
     unitCol: string
     categoryCol: string
     supplierCol?: string
@@ -121,6 +125,17 @@ export async function parseExcelIngredientsFile(
     'custo unitario',
     'unitario',
   ]
+  const reductionKeywords = [
+    'reducao',
+    'redução',
+    '% reducao',
+    '% redução',
+    'reducao %',
+    'redução %',
+    'desconto',
+    '% desconto',
+    'abatimento',
+  ]
   const unitKeywords = ['unidade', 'unid', 'medida', 'um', 'un']
   const categoryKeywords = ['categoria', 'grupo', 'tipo', 'setor', 'departamento']
   const supplierKeywords = ['fornecedor', 'distribuidor', 'marca', 'empresa']
@@ -138,18 +153,29 @@ export async function parseExcelIngredientsFile(
   }
 
   const nameCol = findBestCol(nameKeywords) || headers[0] || ''
-  const priceCol = findBestCol(priceKeywords, [nameCol]) || headers[1] || ''
-  const unitCol = findBestCol(unitKeywords, [nameCol, priceCol]) || headers[2] || ''
-  const categoryCol = findBestCol(categoryKeywords, [nameCol, priceCol, unitCol]) || ''
-  const supplierCol = findBestCol(supplierKeywords, [nameCol, priceCol, unitCol, categoryCol]) || ''
+  const reductionCol = findBestCol(reductionKeywords, [nameCol]) || ''
+  const priceCol = findBestCol(priceKeywords, [nameCol, reductionCol]) || headers[1] || ''
+  const unitCol = findBestCol(unitKeywords, [nameCol, priceCol, reductionCol]) || headers[2] || ''
+  const categoryCol =
+    findBestCol(categoryKeywords, [nameCol, priceCol, unitCol, reductionCol]) || ''
+  const supplierCol =
+    findBestCol(supplierKeywords, [nameCol, priceCol, unitCol, categoryCol, reductionCol]) || ''
   const minStockCol =
-    findBestCol(minStockKeywords, [nameCol, priceCol, unitCol, categoryCol, supplierCol]) || ''
+    findBestCol(minStockKeywords, [
+      nameCol,
+      priceCol,
+      unitCol,
+      categoryCol,
+      supplierCol,
+      reductionCol,
+    ]) || ''
 
   return {
     headers,
     detectedColumns: {
       nameCol,
       priceCol,
+      reductionCol: reductionCol || undefined,
       unitCol,
       categoryCol,
       supplierCol: supplierCol || undefined,
@@ -167,6 +193,7 @@ export function validateIngredientRows(
   columnMapping: {
     nameCol: string
     priceCol: string
+    reductionCol?: string
     unitCol: string
     categoryCol: string
     supplierCol?: string
@@ -179,6 +206,7 @@ export function validateIngredientRows(
   return rows.map((row, index) => {
     const rawName = String(row[columnMapping.nameCol] || '').trim()
     const rawPrice = row[columnMapping.priceCol]
+    const rawReduction = columnMapping.reductionCol ? row[columnMapping.reductionCol] : undefined
     const rawUnit = String(row[columnMapping.unitCol] || '').trim()
     const rawCategory = columnMapping.categoryCol
       ? String(row[columnMapping.categoryCol] || '').trim()
@@ -220,6 +248,23 @@ export function validateIngredientRows(
       errors.push('Preço é obrigatório')
     }
 
+    // Redução (%)
+    let normalizedReductionPercent = 0
+    if (rawReduction !== undefined && rawReduction !== null && rawReduction !== '') {
+      const cleaned = String(rawReduction).trim().replace('%', '').replace(',', '.')
+      const red = parseFloat(cleaned)
+      if (isNaN(red) || red < 0 || red > 100) {
+        errors.push('Redução inválida (deve estar entre 0% e 100%)')
+      } else {
+        normalizedReductionPercent = red
+      }
+    }
+
+    const effectivePrice =
+      normalizedPrice !== undefined
+        ? getEffectiveIngredientPrice(normalizedPrice, normalizedReductionPercent)
+        : undefined
+
     // Unidade
     const normalizedUnit = normalizeUnit(rawUnit)
     if (!normalizedUnit) {
@@ -242,21 +287,27 @@ export function validateIngredientRows(
     const matchedExisting = existingIngredients.find(
       (ing) => normalizeString(ing.name) === normName,
     )
+    const oldEffective = matchedExisting
+      ? getEffectiveIngredientPrice(matchedExisting.price, matchedExisting.reduction_percent)
+      : undefined
     const isPriceChange =
-      matchedExisting && normalizedPrice !== undefined
-        ? Math.abs(matchedExisting.price - normalizedPrice) > 0.001
+      matchedExisting && effectivePrice !== undefined && oldEffective !== undefined
+        ? Math.abs(oldEffective - effectivePrice) > 0.001
         : false
 
     return {
       rowIndex: index + 2,
       rawName,
       rawPrice,
+      rawReductionPercent: rawReduction,
       rawUnit,
       rawCategory,
       rawSupplier: rawSupplier || undefined,
       rawMinStock,
       normalizedName: rawName,
       normalizedPrice,
+      normalizedReductionPercent,
+      effectivePrice,
       normalizedUnit: normalizedUnit || undefined,
       normalizedCategory,
       normalizedSupplier: rawSupplier || undefined,
@@ -276,6 +327,7 @@ export function downloadIngredientsTemplate(sampleIngredients: Ingredient[] = []
   const sample1 = sampleIngredients[0] || {
     name: 'Filé Mignon Bovino',
     price: 68.9,
+    reduction_percent: 10,
     unit: 'kg',
     category: 'Carnes',
     supplier: 'Frigorífico Boi Nobre',
@@ -284,6 +336,7 @@ export function downloadIngredientsTemplate(sampleIngredients: Ingredient[] = []
   const sample2 = sampleIngredients[1] || {
     name: 'Azeite de Oliva Extra Virgem',
     price: 48.0,
+    reduction_percent: 0,
     unit: 'L',
     category: 'Óleos e Azeites',
     supplier: 'Distribuidora Central',
@@ -294,6 +347,7 @@ export function downloadIngredientsTemplate(sampleIngredients: Ingredient[] = []
     {
       'Insumo / Ingrediente': sample1.name,
       'Preço de Compra': sample1.price,
+      'Redução (%)': sample1.reduction_percent ?? 10,
       'Unidade Base': sample1.unit,
       Categoria: sample1.category,
       Fornecedor: sample1.supplier || 'Fornecedor A',
@@ -302,6 +356,7 @@ export function downloadIngredientsTemplate(sampleIngredients: Ingredient[] = []
     {
       'Insumo / Ingrediente': sample2.name,
       'Preço de Compra': sample2.price,
+      'Redução (%)': sample2.reduction_percent ?? 0,
       'Unidade Base': sample2.unit,
       Categoria: sample2.category,
       Fornecedor: sample2.supplier || 'Fornecedor B',
@@ -310,6 +365,7 @@ export function downloadIngredientsTemplate(sampleIngredients: Ingredient[] = []
     {
       'Insumo / Ingrediente': 'Ovos Caipiras (dúzia)',
       'Preço de Compra': 14.5,
+      'Redução (%)': 5,
       'Unidade Base': 'unidade',
       Categoria: 'Hortifruti',
       Fornecedor: 'Granja Esperança',
@@ -324,6 +380,7 @@ export function downloadIngredientsTemplate(sampleIngredients: Ingredient[] = []
   worksheet['!cols'] = [
     { wch: 32 }, // Insumo
     { wch: 18 }, // Preço
+    { wch: 14 }, // Redução (%)
     { wch: 15 }, // Unidade
     { wch: 20 }, // Categoria
     { wch: 28 }, // Fornecedor

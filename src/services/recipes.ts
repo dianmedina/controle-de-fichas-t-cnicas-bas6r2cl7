@@ -91,7 +91,7 @@ export const recipesService = {
     for (const item of items) {
       const ing = item.expand?.ingredient_id
       if (ing) {
-        const itemCost = calculateItemCost(item.quantity, item.unit, ing.price, ing.unit)
+        const itemCost = calculateItemCost(item.quantity, item.unit, ing)
         ingredientsCost += itemCost
       }
     }
