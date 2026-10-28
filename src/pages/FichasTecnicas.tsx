@@ -55,6 +55,7 @@ import {
   ArrowRight,
   TrendingUp,
   FileSpreadsheet,
+  Filter,
 } from 'lucide-react'
 
 export default function FichasTecnicas() {
@@ -128,14 +129,20 @@ export default function FichasTecnicas() {
   const filteredRecipes = useMemo(() => {
     return recipesWithCost.filter((item) => {
       const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase())
+      const matchedDishType = dishTypes.find(
+        (dt) => dt.id === item.type_id || dt.slug === item.type,
+      )
       const matchesType =
         typeFilter === 'all' ||
         item.type === typeFilter ||
         item.type_id === typeFilter ||
-        item.expand?.type_id?.slug === typeFilter
+        item.expand?.type_id?.slug === typeFilter ||
+        item.expand?.type_id?.id === typeFilter ||
+        matchedDishType?.slug === typeFilter ||
+        matchedDishType?.id === typeFilter
       return matchesSearch && matchesType
     })
-  }, [recipesWithCost, searchTerm, typeFilter])
+  }, [recipesWithCost, searchTerm, typeFilter, dishTypes])
 
   const handleOpenCreate = () => {
     setEditingRecipe(null)
@@ -357,17 +364,27 @@ export default function FichasTecnicas() {
         </div>
 
         <div className="flex items-center gap-2">
+          <Filter className="h-4 w-4 text-slate-400 shrink-0" />
           <Select value={typeFilter} onValueChange={(val: 'all' | string) => setTypeFilter(val)}>
-            <SelectTrigger className="w-full sm:w-[200px] text-sm bg-slate-50 border-slate-200">
-              <SelectValue placeholder="Tipo de item" />
+            <SelectTrigger className="w-full sm:w-[220px] text-sm bg-slate-50 border-slate-200">
+              <SelectValue placeholder="Todos os tipos" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Todos os tipos</SelectItem>
-              {dishTypes.map((dt) => (
-                <SelectItem key={dt.id} value={dt.slug || dt.id}>
-                  {dt.name}
-                </SelectItem>
-              ))}
+              <SelectItem value="all">Todos os tipos ({recipesWithCost.length})</SelectItem>
+              {dishTypes.map((dt) => {
+                const count = recipesWithCost.filter(
+                  (r) =>
+                    r.type_id === dt.id ||
+                    r.type === dt.slug ||
+                    r.expand?.type_id?.id === dt.id ||
+                    r.expand?.type_id?.slug === dt.slug,
+                ).length
+                return (
+                  <SelectItem key={dt.id} value={dt.slug || dt.id}>
+                    {dt.name} {dt.is_garnish ? '(Guarnição)' : ''} {count > 0 ? `(${count})` : ''}
+                  </SelectItem>
+                )
+              })}
             </SelectContent>
           </Select>
         </div>

@@ -8,6 +8,7 @@ import {
   ParsedIngredientRow,
 } from '@/lib/excelIngredients'
 import { ingredientsService } from '@/services/ingredients'
+import { ingredientCategoriesService } from '@/services/ingredientCategories'
 import {
   Dialog,
   DialogContent,
@@ -176,7 +177,23 @@ export function ImportIngredientsDialog({
       let createdCount = 0
       let updatedCount = 0
 
+      // Cache de categorias para não repetir chamadas de criação
+      const categoryCache: Record<string, string> = {}
+
       for (const row of validRows) {
+        const catName = (row.normalizedCategory || 'Geral').trim()
+        let linkedCategoryId: string | undefined = categoryCache[catName.toLowerCase()]
+
+        if (!linkedCategoryId && catName) {
+          try {
+            const catRecord = await ingredientCategoriesService.findOrCreate(catName)
+            linkedCategoryId = catRecord.id
+            categoryCache[catName.toLowerCase()] = catRecord.id
+          } catch (e) {
+            console.warn('Falha ao associar/criar categoria durante importação:', e)
+          }
+        }
+
         if (row.matchedExisting) {
           // Insumo já existe: atualiza dados e preço (service alimenta histórico automaticamente)
           const oldEff = row.matchedExisting
@@ -200,12 +217,13 @@ export function ImportIngredientsDialog({
               package_size: row.normalizedPackageSize,
               package_unit: row.normalizedPackageUnit,
               category: row.normalizedCategory || row.matchedExisting.category,
+              category_id: linkedCategoryId || row.matchedExisting.category_id,
               supplier: row.normalizedSupplier || row.matchedExisting.supplier,
               min_stock:
                 row.normalizedMinStock !== undefined
                   ? row.normalizedMinStock
                   : row.matchedExisting.min_stock,
-            },
+            } as any,
             row.isPriceChange
               ? `Importação Excel: Preço anterior ${oldEff} -> Atual ${formatCurrency(row.effectivePrice)}${pkgNote} (base R$ ${row.normalizedPrice?.toFixed(2)}/${row.normalizedUnit}, perda ${row.normalizedReductionPercent || 0}%)`
               : 'Atualização via planilha Excel',
@@ -226,9 +244,10 @@ export function ImportIngredientsDialog({
               package_size: row.normalizedPackageSize,
               package_unit: row.normalizedPackageUnit,
               category: row.normalizedCategory || 'Geral',
+              category_id: linkedCategoryId,
               supplier: row.normalizedSupplier,
               min_stock: row.normalizedMinStock,
-            },
+            } as any,
             `Cadastro inicial via importação Excel${pkgNote} (efetivo: ${formatCurrency(row.effectivePrice)})`,
           )
           createdCount++

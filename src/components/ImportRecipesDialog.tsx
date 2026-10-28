@@ -14,6 +14,7 @@ import {
   GroupedRecipePreview,
 } from '@/lib/excelRecipes'
 import { recipesService } from '@/services/recipes'
+import { dishTypesService } from '@/services/dishTypes'
 import {
   Dialog,
   DialogContent,
@@ -208,19 +209,38 @@ export function ImportRecipesDialog({
       let createdCount = 0
       let updatedCount = 0
 
+      // Cache de tipos de prato para associar/criar automaticamente
+      const dishTypeCache: Record<string, string> = {}
+
       for (const group of validGroups) {
         let recipeId: string
+        const typeRaw = (group.recipeType || 'prato').trim()
+        let linkedTypeId: string | undefined = dishTypeCache[typeRaw.toLowerCase()]
+
+        if (!linkedTypeId && typeRaw) {
+          try {
+            const isGarnish =
+              typeRaw.toLowerCase().includes('guarni') ||
+              typeRaw.toLowerCase().includes('acompanha')
+            const dtRecord = await dishTypesService.findOrCreate(typeRaw, { is_garnish: isGarnish })
+            linkedTypeId = dtRecord.id
+            dishTypeCache[typeRaw.toLowerCase()] = dtRecord.id
+          } catch (e) {
+            console.warn('Falha ao associar/criar tipo de prato durante importação:', e)
+          }
+        }
 
         if (group.matchedExistingRecipe) {
           recipeId = group.matchedExistingRecipe.id
           // Atualiza dados da ficha existente (sem duplicar!)
           await recipesService.update(recipeId, {
             type: group.recipeType,
+            type_id: linkedTypeId || group.matchedExistingRecipe.type_id,
             yield_portions: group.yieldPortions,
             selling_price: group.sellingPrice,
             labor_cost: group.laborCost !== undefined ? group.laborCost : 0,
             notes: group.notes,
-          })
+          } as any)
 
           // Sincroniza composição: remove itens antigos e insere os novos
           const currentItems = await recipesService.getItemsByRecipeId(recipeId)
@@ -234,11 +254,12 @@ export function ImportRecipesDialog({
           const newRecipe = await recipesService.create({
             name: group.recipeName,
             type: group.recipeType,
+            type_id: linkedTypeId,
             yield_portions: group.yieldPortions,
             selling_price: group.sellingPrice,
             labor_cost: group.laborCost !== undefined ? group.laborCost : 0,
             notes: group.notes,
-          })
+          } as any)
           recipeId = newRecipe.id
           createdCount++
         }

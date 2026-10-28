@@ -2,11 +2,13 @@ import React, { useEffect, useState, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { recipesService, RecipeWithCost } from '@/services/recipes'
 import { ingredientsService } from '@/services/ingredients'
+import { dishTypesService } from '@/services/dishTypes'
 import {
   Recipe,
   RecipeItem,
   Ingredient,
   MeasurementUnit,
+  DishType,
   calculateItemCost,
   formatCurrency,
   formatPercent,
@@ -90,13 +92,14 @@ export default function FichaDetalhe() {
   const [allIngredients, setAllIngredients] = useState<Ingredient[]>([])
   const [allRecipes, setAllRecipes] = useState<Recipe[]>([])
   const [allRecipeItems, setAllRecipeItems] = useState<RecipeItem[]>([])
+  const [dishTypes, setDishTypes] = useState<DishType[]>([])
   const [loading, setLoading] = useState(true)
 
   // Edição dos dados da Ficha
   const [isEditingHeader, setIsEditingHeader] = useState(false)
   const [headerData, setHeaderData] = useState({
     name: '',
-    type: 'prato' as 'prato' | 'guarnicao',
+    type: 'prato' as string,
     yield_portions: '1',
     selling_price: '',
     labor_cost: '',
@@ -133,12 +136,13 @@ export default function FichaDetalhe() {
     if (!id) return
     try {
       setLoading(true)
-      const [r, recItems, ings, recs, allItms] = await Promise.all([
+      const [r, recItems, ings, recs, allItms, types] = await Promise.all([
         recipesService.getById(id),
         recipesService.getItemsByRecipeId(id),
         ingredientsService.getAll(),
         recipesService.getAll(),
         recipesService.getAllRecipeItems(),
+        dishTypesService.getAll().catch(() => []),
       ])
 
       setRecipe(r)
@@ -146,6 +150,7 @@ export default function FichaDetalhe() {
       setAllIngredients(ings)
       setAllRecipes(recs)
       setAllRecipeItems(allItms)
+      setDishTypes(types)
 
       setHeaderData({
         name: r.name,
@@ -179,17 +184,24 @@ export default function FichaDetalhe() {
     return recipesService.computeCosts(recipe, items, allRecipes, allRecipeItems)
   }, [recipe, items, allRecipes, allRecipeItems])
 
-  // Guarnições disponíveis para inclusão (apenas type='guarnicao', excluindo a própria receita e aquelas que gerariam ciclo)
+  // Guarnições disponíveis para inclusão (apenas type='guarnicao' ou cujo type_id tem is_garnish=true, excluindo a própria receita e aquelas que gerariam ciclo)
   const availableGarnishes = useMemo(() => {
     if (!recipe) return []
+    const garnishTypeIds = new Set(
+      dishTypes.filter((dt) => dt.is_garnish || dt.slug === 'guarnicao').map((dt) => dt.id),
+    )
     return allRecipes.filter((r) => {
-      if (r.type !== 'guarnicao') return false
+      const isGarnish =
+        r.type === 'guarnicao' ||
+        (r.type_id && garnishTypeIds.has(r.type_id)) ||
+        r.expand?.type_id?.is_garnish
+      if (!isGarnish) return false
       if (r.id === recipe.id) return false
       // Verifica ciclo com as ligações atuais
       if (recipesService.wouldCreateCycle(recipe.id, r.id, allRecipeItems)) return false
       return true
     })
-  }, [recipe, allRecipes, allRecipeItems])
+  }, [recipe, allRecipes, allRecipeItems, dishTypes])
 
   // Separação de itens em Insumos e Guarnições
   const ingredientItems = useMemo(() => {
@@ -419,14 +431,19 @@ export default function FichaDetalhe() {
 
     try {
       setSavingHeader(true)
+      const matchedTypeId = dishTypes.find(
+        (t) => t.slug === headerData.type || t.id === headerData.type || t.name === headerData.type,
+      )?.id
+
       const updated = await recipesService.update(id, {
         name: headerData.name.trim(),
-        type: headerData.type,
+        type: headerData.type as any,
+        type_id: matchedTypeId,
         yield_portions: portionsNum,
         selling_price: priceNum,
         labor_cost: laborNum >= 0 ? laborNum : 0,
         notes: headerData.notes.trim() || undefined,
-      })
+      } as any)
       setRecipe(updated)
       setNotesDraft(updated.notes || '')
       setIsEditingHeader(false)
@@ -672,19 +689,27 @@ export default function FichaDetalhe() {
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label htmlFor="h-type">Tipo *</Label>
+                    <Label htmlFor="h-type">Tipo de Prato / Classificação *</Label>
                     <Select
                       value={headerData.type}
-                      onValueChange={(val: 'prato' | 'guarnicao') =>
-                        setHeaderData({ ...headerData, type: val })
-                      }
+                      onValueChange={(val: string) => setHeaderData({ ...headerData, type: val })}
                     >
                       <SelectTrigger id="h-type">
-                        <SelectValue />
+                        <SelectValue placeholder="Selecione o tipo..." />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="prato">Prato Principal</SelectItem>
-                        <SelectItem value="guarnicao">Guarnição</SelectItem>
+                        {dishTypes.length > 0 ? (
+                          dishTypes.map((dt) => (
+                            <SelectItem key={dt.id} value={dt.slug || dt.id}>
+                              {dt.name} {dt.is_garnish ? '(Guarnição/Sub-ficha)' : ''}
+                            </SelectItem>
+                          ))
+                        ) : (
+                          <>
+                            <SelectItem value="prato">Prato Principal</SelectItem>
+                            <SelectItem value="guarnicao">Guarnição</SelectItem>
+                          </>
+                        )}
                       </SelectContent>
                     </Select>
                   </div>
@@ -782,15 +807,28 @@ export default function FichaDetalhe() {
             <div className="space-y-2">
               <div className="flex items-center gap-2.5 flex-wrap">
                 <h1 className="text-2xl font-bold tracking-tight text-slate-900">{recipe.name}</h1>
-                {recipe.type === 'prato' ? (
-                  <Badge className="bg-amber-100 text-amber-900 border-amber-200 font-medium">
-                    Prato Principal
-                  </Badge>
-                ) : (
-                  <Badge className="bg-orange-100 text-orange-900 border-orange-200 font-medium">
-                    Guarnição
-                  </Badge>
-                )}
+                {(() => {
+                  const matched = dishTypes.find(
+                    (dt) => dt.id === recipe.type_id || dt.slug === recipe.type,
+                  )
+                  const label =
+                    matched?.name ||
+                    (recipe.type === 'prato'
+                      ? 'Prato Principal'
+                      : recipe.type === 'guarnicao'
+                        ? 'Guarnição'
+                        : recipe.type)
+                  const isGarnish = matched?.is_garnish || recipe.type === 'guarnicao'
+                  return isGarnish ? (
+                    <Badge className="bg-orange-100 text-orange-900 border-orange-200 font-medium">
+                      {label}
+                    </Badge>
+                  ) : (
+                    <Badge className="bg-amber-100 text-amber-900 border-amber-200 font-medium">
+                      {label}
+                    </Badge>
+                  )
+                })()}
               </div>
 
               <p className="text-xs text-slate-500">

@@ -10,7 +10,8 @@ import {
   formatPackageInfo,
   getStandardUnitPrice,
   getEffectiveIngredientPrice,
-} from '@/types/restaurant'import { Button } from '@/components/ui/button'
+} from '@/types/restaurant'
+import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -166,7 +167,12 @@ export default function Insumos() {
       const matchesSearch =
         ing.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (ing.supplier && ing.supplier.toLowerCase().includes(searchTerm.toLowerCase()))
-      const matchesCategory = selectedCategory === 'all' || ing.category === selectedCategory
+      const matchesCategory =
+        selectedCategory === 'all' ||
+        ing.category === selectedCategory ||
+        ing.category_id === selectedCategory ||
+        ing.expand?.category_id?.name === selectedCategory ||
+        ing.expand?.category_id?.id === selectedCategory
       return matchesSearch && matchesCategory
     })
   }, [ingredients, searchTerm, selectedCategory])
@@ -480,16 +486,21 @@ export default function Insumos() {
         <div className="flex items-center gap-2">
           <Filter className="h-4 w-4 text-slate-400 shrink-0" />
           <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-            <SelectTrigger className="w-full sm:w-[200px] text-sm bg-slate-50 border-slate-200">
-              <SelectValue placeholder="Todas categorias" />
+            <SelectTrigger className="w-full sm:w-[220px] text-sm bg-slate-50 border-slate-200">
+              <SelectValue placeholder="Todas as categorias" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Todas as categorias</SelectItem>
-              {categories.map((cat) => (
-                <SelectItem key={cat} value={cat}>
-                  {cat}
-                </SelectItem>
-              ))}
+              <SelectItem value="all">Todas as categorias ({ingredients.length})</SelectItem>
+              {categories.map((cat) => {
+                const count = ingredients.filter(
+                  (i) => i.category === cat || i.expand?.category_id?.name === cat,
+                ).length
+                return (
+                  <SelectItem key={cat} value={cat}>
+                    {cat} {count > 0 ? `(${count})` : ''}
+                  </SelectItem>
+                )
+              })}
             </SelectContent>
           </Select>
         </div>
@@ -913,22 +924,42 @@ export default function Insumos() {
                   <div className="flex items-center justify-between">
                     <Label htmlFor="category">Categoria *</Label>
                     <span className="text-[11px] text-slate-400">
-                      Escolha ou digite uma nova
+                      Selecione da lista cadastrada
                     </span>
                   </div>
-                  <Input
-                    id="category"
-                    list="categories-datalist"
-                    placeholder="Ex: Carnes, Hortifruti..."
-                    value={formData.category}
-                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                    required
-                  />
-                  <datalist id="categories-datalist">
-                    {categories.map((c) => (
-                      <option key={c} value={c} />
-                    ))}
-                  </datalist>
+                  <div className="flex items-center gap-2">
+                    <Select
+                      value={formData.category}
+                      onValueChange={(val) => setFormData({ ...formData, category: val })}
+                    >
+                      <SelectTrigger id="category" className="flex-1">
+                        <SelectValue placeholder="Selecione uma categoria..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {categories.map((c) => (
+                          <SelectItem key={c} value={c}>
+                            {c}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {/* Campo alternativo caso queira digitar uma categoria customizada */}
+                  <div className="pt-1">
+                    <Input
+                      id="category-custom"
+                      list="categories-datalist"
+                      placeholder="Ou digite o nome de uma nova categoria..."
+                      className="text-xs h-8 bg-slate-50"
+                      value={formData.category}
+                      onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                    />
+                    <datalist id="categories-datalist">
+                      {categories.map((c) => (
+                        <option key={c} value={c} />
+                      ))}
+                    </datalist>
+                  </div>
                 </div>
 
                 <div className="space-y-1.5">
