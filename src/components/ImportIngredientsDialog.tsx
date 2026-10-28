@@ -73,6 +73,8 @@ export function ImportIngredientsDialog({
     nameCol: '',
     priceCol: '',
     reductionCol: '',
+    packageSizeCol: '',
+    packageUnitCol: '',
     unitCol: '',
     categoryCol: '',
     supplierCol: '',
@@ -106,6 +108,8 @@ export function ImportIngredientsDialog({
         nameCol: detected.detectedColumns.nameCol,
         priceCol: detected.detectedColumns.priceCol,
         reductionCol: detected.detectedColumns.reductionCol || '',
+        packageSizeCol: detected.detectedColumns.packageSizeCol || '',
+        packageUnitCol: detected.detectedColumns.packageUnitCol || '',
         unitCol: detected.detectedColumns.unitCol,
         categoryCol: detected.detectedColumns.categoryCol || '',
         supplierCol: detected.detectedColumns.supplierCol || '',
@@ -135,6 +139,8 @@ export function ImportIngredientsDialog({
       | 'nameCol'
       | 'priceCol'
       | 'reductionCol'
+      | 'packageSizeCol'
+      | 'packageUnitCol'
       | 'unitCol'
       | 'categoryCol'
       | 'supplierCol'
@@ -181,12 +187,18 @@ export function ImportIngredientsDialog({
                 ),
               )
             : ''
+          const pkgNote =
+            row.normalizedPackageSize && row.normalizedPackageUnit
+              ? ` [emb: ${row.normalizedPackageSize} ${row.normalizedPackageUnit}]`
+              : ''
           await ingredientsService.update(
             row.matchedExisting.id,
             {
               price: row.normalizedPrice!,
               reduction_percent: row.normalizedReductionPercent ?? 0,
               unit: row.normalizedUnit!,
+              package_size: row.normalizedPackageSize,
+              package_unit: row.normalizedPackageUnit,
               category: row.normalizedCategory || row.matchedExisting.category,
               supplier: row.normalizedSupplier || row.matchedExisting.supplier,
               min_stock:
@@ -195,23 +207,29 @@ export function ImportIngredientsDialog({
                   : row.matchedExisting.min_stock,
             },
             row.isPriceChange
-              ? `Importação Excel: Preço efetivo anterior ${oldEff} -> Atual ${formatCurrency(row.effectivePrice)} (base R$ ${row.normalizedPrice}, perda ${row.normalizedReductionPercent || 0}%)`
+              ? `Importação Excel: Preço anterior ${oldEff} -> Atual ${formatCurrency(row.effectivePrice)}${pkgNote} (base R$ ${row.normalizedPrice?.toFixed(2)}/${row.normalizedUnit}, perda ${row.normalizedReductionPercent || 0}%)`
               : 'Atualização via planilha Excel',
           )
           updatedCount++
         } else {
           // Novo insumo (service grava registro inicial de preço no histórico com preço efetivo)
+          const pkgNote =
+            row.normalizedPackageSize && row.normalizedPackageUnit
+              ? ` (emb: ${row.normalizedPackageSize} ${row.normalizedPackageUnit} -> R$ ${row.normalizedPrice?.toFixed(2)}/${row.normalizedUnit})`
+              : ''
           await ingredientsService.create(
             {
               name: row.normalizedName!,
               price: row.normalizedPrice!,
               reduction_percent: row.normalizedReductionPercent ?? 0,
               unit: row.normalizedUnit!,
+              package_size: row.normalizedPackageSize,
+              package_unit: row.normalizedPackageUnit,
               category: row.normalizedCategory || 'Geral',
               supplier: row.normalizedSupplier,
               min_stock: row.normalizedMinStock,
             },
-            `Cadastro inicial via importação Excel (efetivo: ${formatCurrency(row.effectivePrice)})`,
+            `Cadastro inicial via importação Excel${pkgNote} (efetivo: ${formatCurrency(row.effectivePrice)})`,
           )
           createdCount++
         }
@@ -385,10 +403,75 @@ export function ImportIngredientsDialog({
                     </div>
 
                     <div className="space-y-1">
-                      <Label className="text-xs text-slate-700">Preço de Compra *</Label>
+                      <Label className="text-xs text-slate-700">Preço Compra / Embalagem *</Label>
                       <Select
                         value={columnMapping.priceCol}
                         onValueChange={(val) => handleRemap('priceCol', val)}
+                      >
+                        <SelectTrigger className="h-8 text-xs bg-white">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {sheetResult.headers.map((h) => (
+                            <SelectItem key={h} value={h} className="text-xs">
+                              {h}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-xs text-slate-700">Tamanho Embalagem (Opcional)</Label>
+                      <Select
+                        value={columnMapping.packageSizeCol || 'none'}
+                        onValueChange={(val) => handleRemap('packageSizeCol', val)}
+                      >
+                        <SelectTrigger className="h-8 text-xs bg-white">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none" className="text-xs text-slate-400">
+                            (Nenhum / Sem embalagem)
+                          </SelectItem>
+                          {sheetResult.headers.map((h) => (
+                            <SelectItem key={h} value={h} className="text-xs">
+                              {h}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-xs text-slate-700">Unidade Embalagem (Opcional)</Label>
+                      <Select
+                        value={columnMapping.packageUnitCol || 'none'}
+                        onValueChange={(val) => handleRemap('packageUnitCol', val)}
+                      >
+                        <SelectTrigger className="h-8 text-xs bg-white">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none" className="text-xs text-slate-400">
+                            (Mesma da unidade base)
+                          </SelectItem>
+                          {sheetResult.headers.map((h) => (
+                            <SelectItem key={h} value={h} className="text-xs">
+                              {h}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-xs text-slate-700">
+                        Medida Padrão (Unidade Base) *
+                      </Label>
+                      <Select
+                        value={columnMapping.unitCol}
+                        onValueChange={(val) => handleRemap('unitCol', val)}
                       >
                         <SelectTrigger className="h-8 text-xs bg-white">
                           <SelectValue />
@@ -418,25 +501,6 @@ export function ImportIngredientsDialog({
                           <SelectItem value="none" className="text-xs text-slate-400">
                             (Nenhuma / 0%)
                           </SelectItem>
-                          {sheetResult.headers.map((h) => (
-                            <SelectItem key={h} value={h} className="text-xs">
-                              {h}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="space-y-1">
-                      <Label className="text-xs text-slate-700">Unidade Base *</Label>
-                      <Select
-                        value={columnMapping.unitCol}
-                        onValueChange={(val) => handleRemap('unitCol', val)}
-                      >
-                        <SelectTrigger className="h-8 text-xs bg-white">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
                           {sheetResult.headers.map((h) => (
                             <SelectItem key={h} value={h} className="text-xs">
                               {h}
@@ -489,28 +553,6 @@ export function ImportIngredientsDialog({
                         </SelectContent>
                       </Select>
                     </div>
-
-                    <div className="space-y-1">
-                      <Label className="text-xs text-slate-700">Estoque Mínimo (Opcional)</Label>
-                      <Select
-                        value={columnMapping.minStockCol || 'none'}
-                        onValueChange={(val) => handleRemap('minStockCol', val)}
-                      >
-                        <SelectTrigger className="h-8 text-xs bg-white">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none" className="text-xs text-slate-400">
-                            (Nenhum)
-                          </SelectItem>
-                          {sheetResult.headers.map((h) => (
-                            <SelectItem key={h} value={h} className="text-xs">
-                              {h}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
                   </div>
                 </div>
               )}
@@ -537,13 +579,19 @@ export function ImportIngredientsDialog({
                           Insumo
                         </TableHead>
                         <TableHead className="text-xs font-semibold text-slate-700 text-right">
-                          Preço Planilha
+                          Preço Compra
+                        </TableHead>
+                        <TableHead className="text-xs font-semibold text-slate-700 text-center">
+                          Embalagem
+                        </TableHead>
+                        <TableHead className="text-xs font-semibold text-slate-700 text-right">
+                          Preço / Padrão
                         </TableHead>
                         <TableHead className="text-xs font-semibold text-slate-700 text-center">
                           Perda (%)
                         </TableHead>
                         <TableHead className="text-xs font-semibold text-slate-700 text-right">
-                          Preço Efetivo (c/ perda)
+                          Custo Utilizável
                         </TableHead>
                         <TableHead className="text-xs font-semibold text-slate-700">
                           Unidade
@@ -571,12 +619,31 @@ export function ImportIngredientsDialog({
                           <TableCell className="text-xs font-medium text-slate-900">
                             {row.rawName || <span className="text-slate-400">(vazio)</span>}
                           </TableCell>
-                          <TableCell className="text-xs text-right font-bold text-slate-800">
-                            {row.normalizedPrice !== undefined ? (
-                              formatCurrency(row.normalizedPrice)
+                          <TableCell className="text-xs text-right font-medium text-slate-700">
+                            {row.rawPackagePrice !== undefined ? (
+                              formatCurrency(row.rawPackagePrice)
                             ) : (
                               <span className="text-red-600 font-normal">
                                 {String(row.rawPrice || '-')}
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-xs text-center">
+                            {row.normalizedPackageSize && row.normalizedPackageUnit ? (
+                              <span className="inline-flex px-1.5 py-0.5 rounded text-[11px] font-medium bg-amber-50 text-amber-900 border border-amber-200">
+                                {row.normalizedPackageSize} {row.normalizedPackageUnit}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 text-[11px]">-</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-xs text-right font-bold text-slate-900">
+                            {row.normalizedPrice !== undefined
+                              ? formatCurrency(row.normalizedPrice)
+                              : '-'}
+                            {row.normalizedUnit && (
+                              <span className="text-[10px] text-slate-400 font-normal ml-0.5">
+                                /{row.normalizedUnit}
                               </span>
                             )}
                           </TableCell>
@@ -590,7 +657,7 @@ export function ImportIngredientsDialog({
                               <span className="text-slate-400 text-[11px]">0%</span>
                             )}
                           </TableCell>
-                          <TableCell className="text-xs text-right font-bold text-emerald-800">
+                          <TableCell className="text-xs text-right font-black text-amber-950">
                             {row.effectivePrice !== undefined
                               ? formatCurrency(row.effectivePrice)
                               : '-'}

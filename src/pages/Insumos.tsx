@@ -6,6 +6,8 @@ import {
   MeasurementUnit,
   formatCurrency,
   getEffectiveIngredientPrice,
+  getStandardUnitPrice,
+  formatPackageInfo,
 } from '@/types/restaurant'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -82,21 +84,43 @@ export default function Insumos() {
   // Formulário
   const [formData, setFormData] = useState({
     name: '',
-    price: '',
+    price: '', // Se has_package, representa o preço pago pela embalagem inteira; se não, o preço por unit
     reduction_percent: '',
-    unit: 'kg' as MeasurementUnit,
+    unit: 'kg' as MeasurementUnit, // Medida padrão de cálculo (kg, L, unidade, etc.)
+    has_package: false,
+    package_size: '',
+    package_unit: 'kg' as MeasurementUnit,
     category: '',
     supplier: '',
     min_stock: '',
   })
 
-  // Preço de custo após redução calculado em tempo real
-  const effectiveCostPreview = useMemo(() => {
+  // Preço por medida padrão convertido da embalagem
+  const standardUnitPricePreview = useMemo(() => {
     const p = parseFloat(formData.price.replace(',', '.'))
-    const red = parseFloat(formData.reduction_percent.replace(',', '.'))
     if (isNaN(p) || p < 0) return 0
-    return getEffectiveIngredientPrice(p, isNaN(red) ? 0 : red)
-  }, [formData.price, formData.reduction_percent])
+
+    if (!formData.has_package) {
+      return p
+    }
+
+    const pkgSize = parseFloat(formData.package_size.replace(',', '.'))
+    if (isNaN(pkgSize) || pkgSize <= 0) return p
+
+    return getStandardUnitPrice(p, pkgSize, formData.package_unit, formData.unit)
+  }, [
+    formData.price,
+    formData.has_package,
+    formData.package_size,
+    formData.package_unit,
+    formData.unit,
+  ])
+
+  // Preço de custo após redução (perda) calculado em tempo real a partir da medida padrão
+  const effectiveCostPreview = useMemo(() => {
+    const red = parseFloat(formData.reduction_percent.replace(',', '.'))
+    return getEffectiveIngredientPrice(standardUnitPricePreview, isNaN(red) ? 0 : red)
+  }, [standardUnitPricePreview, formData.reduction_percent])
 
   const loadIngredients = async () => {
     try {
@@ -145,6 +169,9 @@ export default function Insumos() {
       price: '',
       reduction_percent: '',
       unit: 'kg',
+      has_package: false,
+      package_size: '',
+      package_unit: 'kg',
       category: '',
       supplier: '',
       min_stock: '',
@@ -155,14 +182,40 @@ export default function Insumos() {
   const handleOpenEdit = async (ing: Ingredient) => {
     setEditingIngredient(ing)
     setPriceHistory([])
+    const hasPkg = Boolean(ing.package_size && ing.package_size > 0 && ing.package_unit)
+
+    // Se o insumo tiver embalagem cadastrada, o preço original pago pela embalagem é reconstituído para facilitar a edição
+    // ou se o usuário quiser editar direto o preço da embalagem:
+    let initialPriceStr = ing.price.toString()
+    if (hasPkg && ing.package_size && ing.package_unit) {
+      // Se comprou 5kg e o preço por kg é R$ 4, o preço da embalagem de 5kg foi R$ 20
+      // Calculamos o preço da embalagem com base na conversão reversa
+      if (ing.package_unit === ing.unit) {
+        initialPriceStr = (ing.price * ing.package_size).toFixed(2).replace(/\.00$/, '')
+      } else if (ing.package_unit === 'g' && ing.unit === 'kg') {
+        initialPriceStr = (ing.price * (ing.package_size / 1000)).toFixed(2).replace(/\.00$/, '')
+      } else if (ing.package_unit === 'kg' && ing.unit === 'g') {
+        initialPriceStr = (ing.price * (ing.package_size * 1000)).toFixed(2).replace(/\.00$/, '')
+      } else if (ing.package_unit === 'mL' && ing.unit === 'L') {
+        initialPriceStr = (ing.price * (ing.package_size / 1000)).toFixed(2).replace(/\.00$/, '')
+      } else if (ing.package_unit === 'L' && ing.unit === 'mL') {
+        initialPriceStr = (ing.price * (ing.package_size * 1000)).toFixed(2).replace(/\.00$/, '')
+      } else {
+        initialPriceStr = (ing.price * ing.package_size).toFixed(2).replace(/\.00$/, '')
+      }
+    }
+
     setFormData({
       name: ing.name,
-      price: ing.price.toString(),
+      price: initialPriceStr,
       reduction_percent:
         ing.reduction_percent !== undefined && ing.reduction_percent !== null
           ? ing.reduction_percent.toString()
           : '',
       unit: ing.unit,
+      has_package: hasPkg,
+      package_size: hasPkg && ing.package_size ? ing.package_size.toString() : '',
+      package_unit: (hasPkg && ing.package_unit ? ing.package_unit : ing.unit) as MeasurementUnit,
       category: ing.category,
       supplier: ing.supplier || '',
       min_stock:
@@ -223,14 +276,41 @@ export default function Insumos() {
       ? parseFloat(formData.min_stock.replace(',', '.'))
       : undefined
 
+    let finalStandardPrice = priceNum
+    let packageSizeVal: number | undefined
+    let packageUnitVal: MeasurementUnit | undefined
+
+    if (formData.has_package) {
+      const parsedPkgSize = parseFloat(formData.package_size.replace(',', '.'))
+      if (isNaN(parsedPkgSize) || parsedPkgSize <= 0) {
+        toast({
+          title: 'Tamanho da embalagem inválido',
+          description:
+            'Informe um tamanho de embalagem maior que zero (ex: 5 para pacote de 5kg, 500 para garrafa de 500mL).',
+          variant: 'destructive',
+        })
+        return
+      }
+      packageSizeVal = parsedPkgSize
+      packageUnitVal = formData.package_unit
+      finalStandardPrice = getStandardUnitPrice(
+        priceNum,
+        parsedPkgSize,
+        formData.package_unit,
+        formData.unit,
+      )
+    }
+
     try {
       setSaving(true)
       if (editingIngredient) {
         await ingredientsService.update(editingIngredient.id, {
           name: formData.name.trim(),
-          price: priceNum,
+          price: finalStandardPrice,
           reduction_percent: reductionNum,
           unit: formData.unit,
+          package_size: packageSizeVal,
+          package_unit: packageUnitVal,
           category: formData.category.trim(),
           supplier: formData.supplier.trim() || undefined,
           min_stock: minStockNum,
@@ -239,9 +319,11 @@ export default function Insumos() {
       } else {
         await ingredientsService.create({
           name: formData.name.trim(),
-          price: priceNum,
+          price: finalStandardPrice,
           reduction_percent: reductionNum,
           unit: formData.unit,
+          package_size: packageSizeVal,
+          package_unit: packageUnitVal,
           category: formData.category.trim(),
           supplier: formData.supplier.trim() || undefined,
           min_stock: minStockNum,
@@ -451,11 +533,29 @@ export default function Insumos() {
                   )
                   const hasReduction = !!(ing.reduction_percent && ing.reduction_percent > 0)
 
+                  const hasPackage = Boolean(
+                    ing.package_size && ing.package_size > 0 && ing.package_unit,
+                  )
+                  const packageDesc =
+                    hasPackage && ing.package_size && ing.package_unit
+                      ? formatPackageInfo(ing.package_size, ing.package_unit)
+                      : null
+
                   return (
                     <TableRow key={ing.id} className="hover:bg-slate-50/50">
                       <TableCell className="font-medium text-slate-900">
                         <div>
-                          <span>{ing.name}</span>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span>{ing.name}</span>
+                            {hasPackage && (
+                              <Badge
+                                variant="outline"
+                                className="text-[10px] py-0 px-1.5 font-normal bg-amber-50 text-amber-800 border-amber-200"
+                              >
+                                Emb. {packageDesc}
+                              </Badge>
+                            )}
+                          </div>
                           {hasReduction && (
                             <span className="block text-[11px] text-amber-700 font-medium">
                               +{formatCurrency(effectivePrice - ing.price)} / {ing.unit} utilizável
@@ -473,10 +573,29 @@ export default function Insumos() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right text-sm font-medium text-slate-700">
-                        {formatCurrency(ing.price)}
-                        <span className="text-xs text-slate-400 font-normal ml-1">
-                          / {ing.unit}
-                        </span>
+                        <div>
+                          <span>{formatCurrency(ing.price)}</span>
+                          <span className="text-xs text-slate-400 font-normal ml-1">
+                            / {ing.unit}
+                          </span>
+                        </div>
+                        {hasPackage && ing.package_size && ing.package_unit && (
+                          <span className="block text-[10px] text-slate-500">
+                            {(() => {
+                              let pkgPrice = ing.price * ing.package_size
+                              if (ing.package_unit === 'g' && ing.unit === 'kg') {
+                                pkgPrice = ing.price * (ing.package_size / 1000)
+                              } else if (ing.package_unit === 'mL' && ing.unit === 'L') {
+                                pkgPrice = ing.price * (ing.package_size / 1000)
+                              } else if (ing.package_unit === 'kg' && ing.unit === 'g') {
+                                pkgPrice = ing.price * (ing.package_size * 1000)
+                              } else if (ing.package_unit === 'L' && ing.unit === 'mL') {
+                                pkgPrice = ing.price * (ing.package_size * 1000)
+                              }
+                              return `${ing.package_size} ${ing.package_unit} por ${formatCurrency(pkgPrice)}`
+                            })()}
+                          </span>
+                        )}
                       </TableCell>
                       <TableCell className="text-center">
                         {hasReduction ? (
@@ -570,9 +689,90 @@ export default function Insumos() {
                 />
               </div>
 
+              {/* Opção de Embalagem (Toggle) */}
+              <div className="rounded-xl border border-slate-200 p-3 bg-slate-50/70 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="has_package"
+                      checked={formData.has_package}
+                      onChange={(e) => {
+                        const checked = e.target.checked
+                        setFormData({
+                          ...formData,
+                          has_package: checked,
+                          package_unit: checked ? formData.unit : formData.package_unit,
+                        })
+                      }}
+                      className="h-4 w-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500 cursor-pointer"
+                    />
+                    <Label
+                      htmlFor="has_package"
+                      className="text-sm font-semibold text-slate-800 cursor-pointer"
+                    >
+                      Comprado por embalagem diferente da medida padrão
+                    </Label>
+                  </div>
+                  {formData.has_package && (
+                    <Badge
+                      variant="outline"
+                      className="bg-amber-100 text-amber-900 border-amber-300 text-xs font-semibold"
+                    >
+                      Conversão Ativada
+                    </Badge>
+                  )}
+                </div>
+
+                {formData.has_package && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 border-t border-slate-200">
+                    <div className="space-y-1">
+                      <Label htmlFor="package_size" className="text-xs text-slate-700 font-medium">
+                        Tamanho / Capacidade da Embalagem *
+                      </Label>
+                      <Input
+                        id="package_size"
+                        type="number"
+                        step="any"
+                        min="0.0001"
+                        placeholder="Ex: 5 (para 5kg) ou 500 (para 500mL)"
+                        value={formData.package_size}
+                        onChange={(e) => setFormData({ ...formData, package_size: e.target.value })}
+                        required={formData.has_package}
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label htmlFor="package_unit" className="text-xs text-slate-700 font-medium">
+                        Unidade da Embalagem *
+                      </Label>
+                      <Select
+                        value={formData.package_unit}
+                        onValueChange={(val: MeasurementUnit) =>
+                          setFormData({ ...formData, package_unit: val })
+                        }
+                      >
+                        <SelectTrigger id="package_unit">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {UNITS.map((u) => (
+                            <SelectItem key={u} value={u}>
+                              {u}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="space-y-1.5">
-                  <Label htmlFor="price">Preço de Compra (R$) *</Label>
+                  <Label htmlFor="price">
+                    {formData.has_package ? 'Preço da Embalagem (R$) *' : 'Preço de Compra (R$) *'}
+                  </Label>
                   <div className="relative">
                     <span className="absolute left-3 top-2.5 text-slate-400 text-sm">R$</span>
                     <Input
@@ -587,10 +787,39 @@ export default function Insumos() {
                       required
                     />
                   </div>
+                  {formData.has_package && (
+                    <span className="text-[11px] text-slate-500 block leading-snug">
+                      Valor total pago pelo pacote/garrafa
+                    </span>
+                  )}
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label htmlFor="reduction_percent">Redução / Perda no preparo (%)</Label>
+                  <Label htmlFor="unit">Medida Padrão das Fichas *</Label>
+                  <Select
+                    value={formData.unit}
+                    onValueChange={(val: MeasurementUnit) =>
+                      setFormData({ ...formData, unit: val })
+                    }
+                  >
+                    <SelectTrigger id="unit">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {UNITS.map((u) => (
+                        <SelectItem key={u} value={u}>
+                          {u}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <span className="text-[11px] text-slate-500 block leading-snug">
+                    Unidade de cálculo do sistema (ex: kg ou L)
+                  </span>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="reduction_percent">Redução / Perda (%)</Label>
                   <div className="relative">
                     <Input
                       id="reduction_percent"
@@ -610,53 +839,51 @@ export default function Insumos() {
                     </span>
                   </div>
                   <span className="text-[11px] text-slate-500 block leading-snug">
-                    Perda de peso no preparo (descascar, aparar). O preço de custo por{' '}
-                    {formData.unit} utilizável aumenta proporcionalmente.
+                    Perda no preparo (apara/limpeza)
                   </span>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label htmlFor="unit">Unidade Base *</Label>
-                  <Select
-                    value={formData.unit}
-                    onValueChange={(val: MeasurementUnit) =>
-                      setFormData({ ...formData, unit: val })
-                    }
-                  >
-                    <SelectTrigger id="unit">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {UNITS.map((u) => (
-                        <SelectItem key={u} value={u}>
-                          {u}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
                 </div>
               </div>
 
-              {/* Card de Cálculo em Tempo Real do Novo Preço de Custo */}
-              <div className="p-3.5 bg-amber-50/70 border border-amber-200 rounded-xl flex items-center justify-between">
-                <div>
-                  <span className="text-xs uppercase font-bold text-amber-900 tracking-wide block">
-                    Custo por {formData.unit} Utilizável (c/ perda)
-                  </span>
-                  <span className="text-[11px] text-amber-700">
-                    Este valor será considerado nos custos e porções de todas as fichas técnicas
-                  </span>
-                </div>
-                <div className="text-right">
-                  <span className="text-lg font-black text-amber-950 font-mono">
-                    {formatCurrency(effectiveCostPreview)}
-                  </span>
-                  <span className="text-xs text-amber-700 ml-1">/ {formData.unit}</span>
-                  {parseFloat(formData.reduction_percent) > 0 && (
-                    <span className="block text-[11px] text-amber-800 font-semibold">
-                      +{formData.reduction_percent}% de perda no preparo aplicada
+              {/* Card de Cálculo em Tempo Real do Preço Convertido e Custo Final */}
+              <div className="p-3.5 bg-amber-50/70 border border-amber-200 rounded-xl space-y-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <span className="text-xs uppercase font-bold text-amber-900 tracking-wide block">
+                      Preço por Medida Padrão ({formData.unit})
                     </span>
-                  )}
+                    <span className="text-[11px] text-amber-700">
+                      {formData.has_package && formData.package_size
+                        ? `Preço embalagem (${formatCurrency(parseFloat(formData.price.replace(',', '.')) || 0)}) ÷ ${formData.package_size} ${formData.package_unit}`
+                        : 'Preço base cadastrado'}
+                    </span>
+                  </div>
+                  <div className="text-left sm:text-right">
+                    <span className="text-base font-bold text-slate-900 font-mono">
+                      {formatCurrency(standardUnitPricePreview)}
+                    </span>
+                    <span className="text-xs text-slate-600 ml-1">/ {formData.unit}</span>
+                  </div>
+                </div>
+
+                <div className="border-t border-amber-200/80 pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <span className="text-xs uppercase font-extrabold text-amber-950 tracking-wide block">
+                      Custo Utilizável Final (alimenta as fichas)
+                    </span>
+                    <span className="text-[11px] text-amber-800">
+                      {parseFloat(formData.reduction_percent) > 0
+                        ? `Aplica perda de ${formData.reduction_percent}% no preparo sobre o preço por ${formData.unit}`
+                        : `Sem perda registrada (custo igual ao preço por ${formData.unit})`}
+                    </span>
+                  </div>
+                  <div className="text-left sm:text-right">
+                    <span className="text-lg font-black text-amber-950 font-mono">
+                      {formatCurrency(effectiveCostPreview)}
+                    </span>
+                    <span className="text-xs text-amber-800 font-semibold ml-1">
+                      / {formData.unit} utilizável
+                    </span>
+                  </div>
                 </div>
               </div>
 

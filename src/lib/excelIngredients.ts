@@ -1,5 +1,10 @@
 import * as XLSX from 'xlsx'
-import { Ingredient, MeasurementUnit, getEffectiveIngredientPrice } from '@/types/restaurant'
+import {
+  Ingredient,
+  MeasurementUnit,
+  getEffectiveIngredientPrice,
+  getStandardUnitPrice,
+} from '@/types/restaurant'
 import { normalizeString } from '@/lib/excelSales'
 
 export interface ParsedIngredientRow {
@@ -7,16 +12,21 @@ export interface ParsedIngredientRow {
   rawName: string
   rawPrice: any
   rawReductionPercent?: any
+  rawPackageSize?: any
+  rawPackageUnit?: string
   rawUnit: string
   rawCategory: string
   rawSupplier?: string
   rawMinStock?: any
   // Campos normalizados
   normalizedName?: string
-  normalizedPrice?: number
+  normalizedPrice?: number // Preço por medida padrão (convertido)
+  rawPackagePrice?: number // Preço bruto da embalagem informado
+  normalizedPackageSize?: number
+  normalizedPackageUnit?: MeasurementUnit
   normalizedReductionPercent?: number
-  effectivePrice?: number
-  normalizedUnit?: MeasurementUnit
+  effectivePrice?: number // Custo utilizável final após perda
+  normalizedUnit?: MeasurementUnit // Medida padrão (kg, L, etc.)
   normalizedCategory?: string
   normalizedSupplier?: string
   normalizedMinStock?: number
@@ -34,6 +44,8 @@ export interface IngredientSheetDetectionResult {
     nameCol: string
     priceCol: string
     reductionCol?: string
+    packageSizeCol?: string
+    packageUnitCol?: string
     unitCol: string
     categoryCol: string
     supplierCol?: string
@@ -124,6 +136,25 @@ export async function parseExcelIngredientsFile(
     'preco de compra',
     'custo unitario',
     'unitario',
+    'preco embalagem',
+    'preço embalagem',
+  ]
+  const packageSizeKeywords = [
+    'tamanho embalagem',
+    'capacidade embalagem',
+    'tamanho',
+    'capacidade',
+    'qtd embalagem',
+    'embalagem',
+    'peso liquido',
+    'peso líquido',
+    'volume',
+  ]
+  const packageUnitKeywords = [
+    'unidade embalagem',
+    'unid embalagem',
+    'medida embalagem',
+    'unidade da embalagem',
   ]
   const reductionKeywords = [
     'perda',
@@ -144,7 +175,16 @@ export async function parseExcelIngredientsFile(
     '% desconto',
     'abatimento',
   ]
-  const unitKeywords = ['unidade', 'unid', 'medida', 'um', 'un']
+  const unitKeywords = [
+    'unidade base',
+    'unidade padrao',
+    'medida padrao',
+    'unidade',
+    'unid',
+    'medida',
+    'um',
+    'un',
+  ]
   const categoryKeywords = ['categoria', 'grupo', 'tipo', 'setor', 'departamento']
   const supplierKeywords = ['fornecedor', 'distribuidor', 'marca', 'empresa']
   const minStockKeywords = ['estoque minimo', 'minimo', 'min stock', 'estoque min']
@@ -162,12 +202,36 @@ export async function parseExcelIngredientsFile(
 
   const nameCol = findBestCol(nameKeywords) || headers[0] || ''
   const reductionCol = findBestCol(reductionKeywords, [nameCol]) || ''
-  const priceCol = findBestCol(priceKeywords, [nameCol, reductionCol]) || headers[1] || ''
-  const unitCol = findBestCol(unitKeywords, [nameCol, priceCol, reductionCol]) || headers[2] || ''
+  const packageUnitCol = findBestCol(packageUnitKeywords, [nameCol, reductionCol]) || ''
+  const packageSizeCol =
+    findBestCol(packageSizeKeywords, [nameCol, reductionCol, packageUnitCol]) || ''
+  const priceCol =
+    findBestCol(priceKeywords, [nameCol, reductionCol, packageSizeCol, packageUnitCol]) ||
+    headers[1] ||
+    ''
+  const unitCol =
+    findBestCol(unitKeywords, [nameCol, priceCol, reductionCol, packageSizeCol, packageUnitCol]) ||
+    headers[2] ||
+    ''
   const categoryCol =
-    findBestCol(categoryKeywords, [nameCol, priceCol, unitCol, reductionCol]) || ''
+    findBestCol(categoryKeywords, [
+      nameCol,
+      priceCol,
+      unitCol,
+      reductionCol,
+      packageSizeCol,
+      packageUnitCol,
+    ]) || ''
   const supplierCol =
-    findBestCol(supplierKeywords, [nameCol, priceCol, unitCol, categoryCol, reductionCol]) || ''
+    findBestCol(supplierKeywords, [
+      nameCol,
+      priceCol,
+      unitCol,
+      categoryCol,
+      reductionCol,
+      packageSizeCol,
+      packageUnitCol,
+    ]) || ''
   const minStockCol =
     findBestCol(minStockKeywords, [
       nameCol,
@@ -176,6 +240,8 @@ export async function parseExcelIngredientsFile(
       categoryCol,
       supplierCol,
       reductionCol,
+      packageSizeCol,
+      packageUnitCol,
     ]) || ''
 
   return {
@@ -184,6 +250,8 @@ export async function parseExcelIngredientsFile(
       nameCol,
       priceCol,
       reductionCol: reductionCol || undefined,
+      packageSizeCol: packageSizeCol || undefined,
+      packageUnitCol: packageUnitCol || undefined,
       unitCol,
       categoryCol,
       supplierCol: supplierCol || undefined,
@@ -202,6 +270,8 @@ export function validateIngredientRows(
     nameCol: string
     priceCol: string
     reductionCol?: string
+    packageSizeCol?: string
+    packageUnitCol?: string
     unitCol: string
     categoryCol: string
     supplierCol?: string
@@ -215,6 +285,8 @@ export function validateIngredientRows(
     const rawName = String(row[columnMapping.nameCol] || '').trim()
     const rawPrice = row[columnMapping.priceCol]
     const rawReduction = columnMapping.reductionCol ? row[columnMapping.reductionCol] : undefined
+    const rawPkgSize = columnMapping.packageSizeCol ? row[columnMapping.packageSizeCol] : undefined
+    const rawPkgUnit = columnMapping.packageUnitCol ? row[columnMapping.packageUnitCol] : undefined
     const rawUnit = String(row[columnMapping.unitCol] || '').trim()
     const rawCategory = columnMapping.categoryCol
       ? String(row[columnMapping.categoryCol] || '').trim()
@@ -237,8 +309,14 @@ export function validateIngredientRows(
       seenNames.add(normName)
     }
 
-    // Preço
-    let normalizedPrice: number | undefined
+    // Unidade Base
+    const normalizedUnit = normalizeUnit(rawUnit)
+    if (!normalizedUnit) {
+      errors.push(`Unidade "${rawUnit}" inválida (use kg, g, L, mL ou unidade)`)
+    }
+
+    // Preço bruto informado (da embalagem ou por unidade)
+    let rawParsedPrice: number | undefined
     if (rawPrice !== undefined && rawPrice !== null && rawPrice !== '') {
       let cleaned = String(rawPrice).trim().replace('R$', '').replace(/\s/g, '')
       if (cleaned.includes(',') && cleaned.includes('.')) {
@@ -250,10 +328,47 @@ export function validateIngredientRows(
       if (isNaN(p) || p < 0) {
         errors.push('Preço inválido (deve ser maior ou igual a zero)')
       } else {
-        normalizedPrice = p
+        rawParsedPrice = p
       }
     } else {
       errors.push('Preço é obrigatório')
+    }
+
+    // Embalagem (opcional)
+    let normalizedPackageSize: number | undefined
+    let normalizedPackageUnit: MeasurementUnit | undefined
+
+    if (rawPkgSize !== undefined && rawPkgSize !== null && String(rawPkgSize).trim() !== '') {
+      const cleanedSize = String(rawPkgSize).replace(',', '.').trim()
+      const s = parseFloat(cleanedSize)
+      if (!isNaN(s) && s > 0) {
+        normalizedPackageSize = s
+      }
+    }
+
+    if (rawPkgUnit) {
+      const u = normalizeUnit(rawPkgUnit)
+      if (u) normalizedPackageUnit = u
+    }
+
+    // Se informou tamanho de embalagem mas não informou unidade da embalagem, assume a própria unidade base (se houver)
+    if (normalizedPackageSize && !normalizedPackageUnit && normalizedUnit) {
+      normalizedPackageUnit = normalizedUnit
+    }
+
+    // Preço convertido por medida padrão
+    let normalizedPrice: number | undefined
+    if (rawParsedPrice !== undefined && normalizedUnit) {
+      if (normalizedPackageSize && normalizedPackageUnit) {
+        normalizedPrice = getStandardUnitPrice(
+          rawParsedPrice,
+          normalizedPackageSize,
+          normalizedPackageUnit,
+          normalizedUnit,
+        )
+      } else {
+        normalizedPrice = rawParsedPrice
+      }
     }
 
     // Redução / Perda no preparo (%)
@@ -272,12 +387,6 @@ export function validateIngredientRows(
       normalizedPrice !== undefined
         ? getEffectiveIngredientPrice(normalizedPrice, normalizedReductionPercent)
         : undefined
-
-    // Unidade
-    const normalizedUnit = normalizeUnit(rawUnit)
-    if (!normalizedUnit) {
-      errors.push(`Unidade "${rawUnit}" inválida (use kg, g, L, mL ou unidade)`)
-    }
 
     // Categoria
     const normalizedCategory = rawCategory || 'Geral'
@@ -308,12 +417,17 @@ export function validateIngredientRows(
       rawName,
       rawPrice,
       rawReductionPercent: rawReduction,
+      rawPackageSize: rawPkgSize,
+      rawPackageUnit: rawPkgUnit,
       rawUnit,
       rawCategory,
       rawSupplier: rawSupplier || undefined,
       rawMinStock,
       normalizedName: rawName,
       normalizedPrice,
+      rawPackagePrice: rawParsedPrice,
+      normalizedPackageSize,
+      normalizedPackageUnit,
       normalizedReductionPercent,
       effectivePrice,
       normalizedUnit: normalizedUnit || undefined,
@@ -341,43 +455,40 @@ export function downloadIngredientsTemplate(sampleIngredients: Ingredient[] = []
     supplier: 'Frigorífico Boi Nobre',
     min_stock: 5,
   }
-  const sample2 = sampleIngredients[1] || {
-    name: 'Azeite de Oliva Extra Virgem',
-    price: 48.0,
-    reduction_percent: 0,
-    unit: 'L',
-    category: 'Óleos e Azeites',
-    supplier: 'Distribuidora Central',
-    min_stock: 4,
-  }
 
   const templateData = [
     {
+      'Insumo / Ingrediente': 'Arroz Branco Tipo 1',
+      'Preço da Embalagem / Compra': 20.0,
+      'Tamanho da Embalagem': 5,
+      'Unidade da Embalagem': 'kg',
+      'Medida Padrão': 'kg',
+      'Redução (%)': 0,
+      Categoria: 'Grãos e Cereais',
+      Fornecedor: 'Distribuidora Alvorada',
+      'Estoque Mínimo': 2,
+    },
+    {
+      'Insumo / Ingrediente': 'Azeite de Oliva Extra Virgem',
+      'Preço da Embalagem / Compra': 20.0,
+      'Tamanho da Embalagem': 500,
+      'Unidade da Embalagem': 'mL',
+      'Medida Padrão': 'L',
+      'Redução (%)': 5,
+      Categoria: 'Óleos e Azeites',
+      Fornecedor: 'Importadora Central',
+      'Estoque Mínimo': 4,
+    },
+    {
       'Insumo / Ingrediente': sample1.name,
-      'Preço de Compra': sample1.price,
+      'Preço da Embalagem / Compra': sample1.price,
+      'Tamanho da Embalagem': '',
+      'Unidade da Embalagem': '',
+      'Medida Padrão': sample1.unit,
       'Redução (%)': sample1.reduction_percent ?? 10,
-      'Unidade Base': sample1.unit,
       Categoria: sample1.category,
       Fornecedor: sample1.supplier || 'Fornecedor A',
       'Estoque Mínimo': sample1.min_stock || 5,
-    },
-    {
-      'Insumo / Ingrediente': sample2.name,
-      'Preço de Compra': sample2.price,
-      'Redução (%)': sample2.reduction_percent ?? 0,
-      'Unidade Base': sample2.unit,
-      Categoria: sample2.category,
-      Fornecedor: sample2.supplier || 'Fornecedor B',
-      'Estoque Mínimo': sample2.min_stock || 3,
-    },
-    {
-      'Insumo / Ingrediente': 'Ovos Caipiras (dúzia)',
-      'Preço de Compra': 14.5,
-      'Redução (%)': 5,
-      'Unidade Base': 'unidade',
-      Categoria: 'Hortifruti',
-      Fornecedor: 'Granja Esperança',
-      'Estoque Mínimo': 6,
     },
   ]
 
@@ -386,12 +497,14 @@ export function downloadIngredientsTemplate(sampleIngredients: Ingredient[] = []
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Modelo Insumos')
 
   worksheet['!cols'] = [
-    { wch: 32 }, // Insumo
-    { wch: 18 }, // Preço
+    { wch: 30 }, // Insumo
+    { wch: 22 }, // Preço
+    { wch: 20 }, // Tamanho Embalagem
+    { wch: 20 }, // Unidade Embalagem
+    { wch: 15 }, // Medida Padrão
     { wch: 14 }, // Redução (%)
-    { wch: 15 }, // Unidade
     { wch: 20 }, // Categoria
-    { wch: 28 }, // Fornecedor
+    { wch: 26 }, // Fornecedor
     { wch: 16 }, // Estoque Mínimo
   ]
 

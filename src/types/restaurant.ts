@@ -19,8 +19,72 @@ export interface Ingredient {
   supplier?: string
   min_stock?: number
   reduction_percent?: number
+  package_size?: number
+  package_unit?: MeasurementUnit
   created?: string
   updated?: string
+}
+
+/**
+ * Converte o preço pago de uma embalagem para a medida padrão (unit).
+ * Suporta conversões compatíveis:
+ * - Massa: kg ↔ g
+ * - Volume: L ↔ mL
+ * - Unidade ↔ Unidade
+ *
+ * Exemplos:
+ * - Arroz pacote 5kg custa R$ 20 -> preço por kg = 20 / 5 = R$ 4,00 / kg
+ * - Azeite garrafa 500mL custa R$ 20 -> medida padrão L -> 500mL = 0.5L -> 20 / 0.5 = R$ 40,00 / L
+ * - Tempero pote 50g custa R$ 5 -> medida padrão kg -> 50g = 0.05kg -> 5 / 0.05 = R$ 100,00 / kg
+ * - Caixa 12 unidades custa R$ 24 -> medida padrão unidade -> 24 / 12 = R$ 2,00 / unidade
+ *
+ * Se não houver embalagem configurada ou tamanhos forem inválidos, retorna o próprio packagePrice (comportamento padrão).
+ */
+export function getStandardUnitPrice(
+  packagePrice: number | undefined | null,
+  packageSize: number | undefined | null,
+  packageUnit: MeasurementUnit | undefined | null,
+  standardUnit: MeasurementUnit,
+): number {
+  const price =
+    typeof packagePrice === 'number' && !isNaN(packagePrice) && packagePrice >= 0 ? packagePrice : 0
+  if (price === 0) return 0
+
+  if (!packageSize || packageSize <= 0 || !packageUnit) {
+    return price
+  }
+
+  // 1. Unidades idênticas (ex: 5 kg com padrão kg, ou 10 unidades com padrão unidade)
+  if (packageUnit === standardUnit) {
+    return price / packageSize
+  }
+
+  // 2. Massa: g e kg
+  if (packageUnit === 'g' && standardUnit === 'kg') {
+    // Ex: pote 500g custa R$ 15 -> tamanho em kg = 500 / 1000 = 0.5kg -> R$ 15 / 0.5 = R$ 30/kg
+    const sizeInStandard = packageSize / 1000
+    return sizeInStandard > 0 ? price / sizeInStandard : price
+  }
+  if (packageUnit === 'kg' && standardUnit === 'g') {
+    // Ex: saco 1kg com padrão g -> tamanho em g = 1000g -> R$ 20 / 1000 = R$ 0.02/g
+    const sizeInStandard = packageSize * 1000
+    return sizeInStandard > 0 ? price / sizeInStandard : price
+  }
+
+  // 3. Volume: mL e L
+  if (packageUnit === 'mL' && standardUnit === 'L') {
+    // Ex: garrafa 500mL custa R$ 20 -> tamanho em L = 500 / 1000 = 0.5L -> R$ 20 / 0.5 = R$ 40/L
+    const sizeInStandard = packageSize / 1000
+    return sizeInStandard > 0 ? price / sizeInStandard : price
+  }
+  if (packageUnit === 'L' && standardUnit === 'mL') {
+    // Ex: garrafa 1L com padrão mL -> tamanho em mL = 1000mL -> R$ 30 / 1000 = R$ 0.03/mL
+    const sizeInStandard = packageSize * 1000
+    return sizeInStandard > 0 ? price / sizeInStandard : price
+  }
+
+  // Se forem unidades incompatíveis (ex: comprou em unidade e padrão é kg sem densidade), divide pelo tamanho bruto
+  return price / packageSize
 }
 
 /**
@@ -49,6 +113,24 @@ export function getEffectiveIngredientPrice(
   if (usableFactor <= 0) return basePrice
 
   return basePrice / usableFactor
+}
+
+/**
+ * Formata a informação de embalagem de forma concisa e legível.
+ * Exemplo: "5 kg (R$ 20,00)" ou "500 mL (R$ 20,00)"
+ */
+export function formatPackageInfo(
+  packageSize: number | undefined | null,
+  packageUnit: MeasurementUnit | undefined | null,
+  packagePrice?: number | null,
+): string | null {
+  if (!packageSize || packageSize <= 0 || !packageUnit) return null
+  const sizeFormatted =
+    packageSize % 1 === 0 ? packageSize.toString() : packageSize.toString().replace('.', ',')
+  if (packagePrice !== undefined && packagePrice !== null && packagePrice > 0) {
+    return `${sizeFormatted} ${packageUnit} (${formatCurrency(packagePrice)})`
+  }
+  return `${sizeFormatted} ${packageUnit}`
 }
 
 export type RecipeType = 'prato' | 'guarnicao'

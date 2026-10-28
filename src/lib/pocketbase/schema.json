@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-28T00:52:13.298Z",
+  "generatedAt": "2026-10-28T01:01:03.958Z",
   "collections": [
     {
       "name": "users",
@@ -111,6 +111,19 @@
           "type": "number",
           "required": false,
           "system": false
+        },
+        {
+          "name": "package_size",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "package_unit",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["kg", "g", "L", "mL", "unidade"]
         }
       ],
       "indexes": [
@@ -187,10 +200,23 @@
           "system": false
         },
         {
-          "name": "photo_2",
-          "type": "file",
+          "name": "reduction_percent",
+          "type": "number",
           "required": false,
           "system": false
+        },
+        {
+          "name": "package_size",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "package_unit",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["kg", "g", "L", "mL", "unidade"]
         }
       ],
       "indexes": [

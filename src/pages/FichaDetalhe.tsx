@@ -11,6 +11,7 @@ import {
   formatCurrency,
   formatPercent,
   getEffectiveIngredientPrice,
+  formatPackageInfo,
 } from '@/types/restaurant'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -1205,11 +1206,21 @@ export default function FichaDetalhe() {
                       <TableRow key={item.id} className="hover:bg-slate-50/50">
                         <TableCell className="font-medium text-slate-900">
                           <div>
-                            <span>
-                              {ing?.name || (
-                                <span className="text-slate-400">Insumo não encontrado</span>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span>
+                                {ing?.name || (
+                                  <span className="text-slate-400">Insumo não encontrado</span>
+                                )}
+                              </span>
+                              {ing?.package_size && ing?.package_unit && (
+                                <Badge
+                                  variant="outline"
+                                  className="text-[10px] py-0 px-1 font-normal bg-amber-50 text-amber-800 border-amber-200"
+                                >
+                                  Emb. {formatPackageInfo(ing.package_size, ing.package_unit)}
+                                </Badge>
                               )}
-                            </span>
+                            </div>
                             {hasRed && (
                               <span className="block text-[11px] text-amber-700 font-medium">
                                 Perda de {ing.reduction_percent}% no preparo
@@ -1762,9 +1773,19 @@ export default function FichaDetalhe() {
                         {allIngredients.map((ing) => {
                           const eff = getEffectiveIngredientPrice(ing.price, ing.reduction_percent)
                           const hasRed = !!(ing.reduction_percent && ing.reduction_percent > 0)
+                          const hasPkg = !!(
+                            ing.package_size &&
+                            ing.package_size > 0 &&
+                            ing.package_unit
+                          )
+                          const pkgText =
+                            hasPkg && ing.package_size && ing.package_unit
+                              ? ` - emb. ${formatPackageInfo(ing.package_size, ing.package_unit)}`
+                              : ''
                           return (
                             <SelectItem key={ing.id} value={ing.id}>
                               {ing.name} ({formatCurrency(eff)} / {ing.unit}
+                              {pkgText}
                               {hasRed ? ` - perda ${ing.reduction_percent}%` : ''})
                             </SelectItem>
                           )

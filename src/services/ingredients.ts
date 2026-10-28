@@ -45,10 +45,18 @@ export const ingredientsService = {
       try {
         let note = historyNotes
         if (!note) {
+          const hasPackage = !!(
+            created.package_size &&
+            created.package_size > 0 &&
+            created.package_unit
+          )
+          const packagePart = hasPackage
+            ? ` (embalagem: ${created.package_size} ${created.package_unit} -> R$ ${created.price.toFixed(2)}/${created.unit})`
+            : ''
           if (created.reduction_percent && created.reduction_percent > 0) {
-            note = `Preço inicial: R$ ${created.price.toFixed(2)} c/ ${created.reduction_percent}% de perda no preparo (efetivo: R$ ${effectivePrice.toFixed(2)})`
+            note = `Preço inicial: R$ ${created.price.toFixed(2)}/${created.unit}${packagePart} c/ ${created.reduction_percent}% de perda (efetivo: R$ ${effectivePrice.toFixed(2)}/${created.unit})`
           } else {
-            note = 'Preço inicial de cadastro'
+            note = `Preço inicial de cadastro: R$ ${created.price.toFixed(2)}/${created.unit}${packagePart}`
           }
         }
         await pb.collection('ingredient_price_history').create({
@@ -78,11 +86,17 @@ export const ingredientsService = {
 
     const updated = await pb.collection('ingredients').update<Ingredient>(id, data)
 
-    // Verifica se houve mudança no preço base OU na redução percentual
+    // Verifica se houve mudança no preço padrão, na embalagem ou na perda
     const priceChanged =
       data.price !== undefined &&
       currentRecord?.price !== undefined &&
       Math.abs(currentRecord.price - data.price) > 0.0001
+
+    const oldPackageSize = currentRecord?.package_size
+    const newPackageSize = data.package_size !== undefined ? data.package_size : oldPackageSize
+    const packageChanged =
+      (data.package_size !== undefined && data.package_size !== oldPackageSize) ||
+      (data.package_unit !== undefined && data.package_unit !== currentRecord?.package_unit)
 
     const oldRed = currentRecord?.reduction_percent ?? 0
     const newRed = data.reduction_percent !== undefined ? data.reduction_percent : oldRed
@@ -97,7 +111,7 @@ export const ingredientsService = {
     const effectiveDiffers =
       oldEffective === undefined || Math.abs(oldEffective - newEffective) > 0.0001
 
-    if ((priceChanged || reductionChanged) && effectiveDiffers) {
+    if ((priceChanged || reductionChanged || packageChanged) && effectiveDiffers) {
       try {
         let note = historyNotes
         if (!note) {
@@ -105,12 +119,25 @@ export const ingredientsService = {
           const direction = diff >= 0 ? 'aumento' : 'redução'
           const diffStr = Math.abs(diff).toFixed(2)
 
-          if (priceChanged && reductionChanged) {
-            note = `Ajuste base (R$ ${updated.price.toFixed(2)}) e perda (${newRed}%): ${direction} de R$ ${diffStr}`
+          const hasNewPackage = !!(
+            updated.package_size &&
+            updated.package_size > 0 &&
+            updated.package_unit
+          )
+          const packageDesc = hasNewPackage
+            ? ` [emb. ${updated.package_size} ${updated.package_unit}]`
+            : ''
+
+          if (packageChanged && priceChanged) {
+            note = `Ajuste de embalagem${packageDesc} e preço: ${direction} de R$ ${diffStr} (novo custo: R$ ${newEffective.toFixed(2)}/${updated.unit})`
+          } else if (priceChanged && reductionChanged) {
+            note = `Ajuste base (R$ ${updated.price.toFixed(2)}/${updated.unit}${packageDesc}) e perda (${newRed}%): ${direction} de R$ ${diffStr}`
           } else if (reductionChanged) {
             note = `Alteração de perda no preparo: ${oldRed}% -> ${newRed}% (${direction} de R$ ${diffStr})`
+          } else if (packageChanged) {
+            note = `Alteração de embalagem${packageDesc}: ${direction} de R$ ${diffStr}`
           } else if (oldEffective !== undefined) {
-            note = `Ajuste de preço base: ${direction} de R$ ${diffStr}`
+            note = `Ajuste de preço base${packageDesc}: ${direction} de R$ ${diffStr}`
           } else {
             note = 'Atualização de preço efetivo'
           }

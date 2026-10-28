@@ -6,6 +6,7 @@ import {
   formatCurrency,
   formatPercent,
   getEffectiveIngredientPrice,
+  formatPackageInfo,
 } from '@/types/restaurant'
 import { ChefHat, CookingPot, Utensils, Scale, DollarSign, Image as ImageIcon } from 'lucide-react'
 
@@ -307,11 +308,14 @@ export const PrintableRecipeSheet: React.FC<PrintableRecipeSheetProps> = ({
                       >
                         <td className="py-1 px-1.5 font-medium text-slate-900 leading-tight">
                           {ing?.name || 'Insumo'}
-                          {ing?.category && (
-                            <span className="block text-[9px] text-slate-500 font-normal">
-                              {ing.category}
-                            </span>
-                          )}
+                          <span className="block text-[9px] text-slate-500 font-normal">
+                            {ing?.category}
+                            {ing?.package_size && ing?.package_unit && (
+                              <span className="text-amber-800 ml-1">
+                                (emb. {formatPackageInfo(ing.package_size, ing.package_unit)})
+                              </span>
+                            )}
+                          </span>
                         </td>
                         <td
                           className={`py-1 px-1.5 font-bold text-slate-800 whitespace-nowrap ${hideCosts ? 'text-right text-xs' : 'text-center'}`}
