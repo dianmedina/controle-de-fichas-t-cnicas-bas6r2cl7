@@ -754,8 +754,8 @@ export default function FichaDetalhe() {
                     <Input
                       id="h-yield"
                       type="number"
-                      step="0.5"
-                      min="0.1"
+                      step="1"
+                      min="1"
                       value={headerData.yield_portions}
                       onChange={(e) =>
                         setHeaderData({ ...headerData, yield_portions: e.target.value })

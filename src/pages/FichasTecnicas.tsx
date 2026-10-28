@@ -697,8 +697,8 @@ export default function FichasTecnicas() {
                   <Input
                     id="r-yield"
                     type="number"
-                    step="0.5"
-                    min="0.1"
+                    step="1"
+                    min="1"
                     placeholder="1"
                     value={formData.yield_portions}
                     onChange={(e) => setFormData({ ...formData, yield_portions: e.target.value })}

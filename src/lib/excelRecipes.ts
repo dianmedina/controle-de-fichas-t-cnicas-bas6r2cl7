@@ -384,26 +384,71 @@ function parseNumericValue(val: any): number | null {
  * use apenas a célula numérica da linha SubTotal — e se ela for implausível (ex.: > 1000), não quebre:
  * trate como sem porções (1 porção padrão) e avise."
  */
+/**
+ * Normaliza o valor de rendimento em porções para a realidade da cozinha:
+ * 1. Valores muito próximos de inteiros (ex: 5.9999 ou 6.0001) viram inteiros.
+ * 2. Em fichas técnicas, porções são contagens inteiras na imensa maioria das cozinhas.
+ *    Quando o valor da planilha for calculado por divisão de massa (ex.: 5,625 porções de farofa 320g
+ *    ou 10,588 de farofa 170g gerados por peso total da batelada / gramatura), pode ser arredondado
+ *    para o número inteiro de porções padrão correspondente ou mantido como decimal simples caso pretendido.
+ *    Se o valor estiver dentro de tolerância de arredondamento inteiro (< 0.1 de um inteiro ou resultado fracionário de massa),
+ *    arredonda para o inteiro mais próximo.
+ */
+export function normalizeYieldPortions(rawVal: number | null | undefined): {
+  yieldPortions: number
+  warning?: string
+} {
+  if (rawVal === null || rawVal === undefined || isNaN(rawVal) || rawVal <= 0) {
+    return { yieldPortions: 1 }
+  }
+
+  // Se for valor implausível (ex.: > 1000 ou peso solto sem sentido)
+  if (rawVal > 1000) {
+    return {
+      yieldPortions: 1,
+      warning: `Rendimento informado (${rawVal}) é implausível (> 1000); assumido 1 porção.`,
+    }
+  }
+
+  // Arredonda para 4 casas decimais primeiro para evitar imprecisão de float
+  const cleanVal = Math.round(rawVal * 10000) / 10000
+
+  // Se já é inteiro
+  if (Math.abs(cleanVal - Math.round(cleanVal)) < 0.0001) {
+    return { yieldPortions: Math.round(cleanVal) }
+  }
+
+  // Se for fração decorrente de divisão de massa por porção (ex: 5.625 -> 6 porções; 10.588 -> 11 ou 10; 13.083 -> 13; 8.75 -> 9 ou 8; 17.5 -> 18; 24.5 -> 25; 2.5 -> 2 ou 3)
+  // Na cozinha, o rendimento esperado é um número de porções arredondado.
+  // Arredonda para o inteiro mais próximo quando for fração quebrada típica de porcionamento
+  const roundedInt = Math.round(cleanVal)
+  if (roundedInt >= 1) {
+    return {
+      yieldPortions: roundedInt,
+      warning: `Rendimento fracionário (${cleanVal}) ajustado para ${roundedInt} ${roundedInt > 1 ? 'porções' : 'porção'}.`,
+    }
+  }
+
+  return {
+    yieldPortions: Math.max(1, Math.round(cleanVal)),
+  }
+}
+
+/**
+ * Heurística para o valor de rendimento:
+ * REGRA DO NEGÓCIO (Requisito 3):
+ * "O número de porções REAL de cada bloco está na linha SubTotal, na mesma coluna de rendimento
+ * (célula numérica plausível, tipo 6, 12, 5,625, 1). Ignore a coluna de rendimento das linhas de ingrediente;
+ * use apenas a célula numérica da linha SubTotal — e se ela for implausível (ex.: > 1000), não quebre:
+ * trate como sem porções (1 porção padrão) e avise."
+ * E garanta que o rendimento resultante não exija números quebrados que não condizem com a realidade da cozinha.
+ */
 function resolveYieldPortionsFromSubtotal(subTotalPortionsVal: any): {
   yieldPortions: number
   warning?: string
 } {
   const pSub = parseNumericValue(subTotalPortionsVal)
-  if (pSub === null || pSub <= 0) {
-    return { yieldPortions: 1 }
-  }
-
-  // Se for valor implausível (ex.: > 1000 ou peso solto sem sentido)
-  if (pSub > 1000) {
-    return {
-      yieldPortions: 1,
-      warning: `Rendimento informado no SubTotal (${pSub}) é implausível (> 1000); assumido 1 porção.`,
-    }
-  }
-
-  return {
-    yieldPortions: Math.round(pSub * 1000) / 1000,
-  }
+  return normalizeYieldPortions(pSub)
 }
 
 /**
@@ -1295,8 +1340,10 @@ export function validateAndGroupRecipeRows(
     // Rendimento (default: 1)
     let parsedYield = 1
     if (columnMapping.yieldCol && row[columnMapping.yieldCol]) {
-      const y = parseFloat(String(row[columnMapping.yieldCol]).replace(',', '.'))
-      if (!isNaN(y) && y > 0) parsedYield = y
+      const parsedNum = parseNumericValue(row[columnMapping.yieldCol])
+      if (parsedNum !== null && parsedNum > 0) {
+        parsedYield = normalizeYieldPortions(parsedNum).yieldPortions
+      }
     }
 
     // Preço de venda (default: 0)
