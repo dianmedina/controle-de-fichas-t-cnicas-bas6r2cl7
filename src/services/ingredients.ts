@@ -5,12 +5,15 @@ export const ingredientsService = {
   async getAll(): Promise<Ingredient[]> {
     const records = await pb.collection('ingredients').getFullList<Ingredient>({
       sort: 'name',
+      expand: 'category_id',
     })
     return records
   },
 
   async getById(id: string): Promise<Ingredient> {
-    return await pb.collection('ingredients').getOne<Ingredient>(id)
+    return await pb.collection('ingredients').getOne<Ingredient>(id, {
+      expand: 'category_id',
+    })
   },
 
   async getPriceHistory(ingredientId: string): Promise<IngredientPriceHistory[]> {

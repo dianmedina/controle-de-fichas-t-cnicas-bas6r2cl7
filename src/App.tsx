@@ -12,6 +12,7 @@ import Insumos from './pages/Insumos'
 import FichasTecnicas from './pages/FichasTecnicas'
 import FichaDetalhe from './pages/FichaDetalhe'
 import VendasPrecificacao from './pages/VendasPrecificacao'
+import Cadastros from './pages/Cadastros'
 import Configuracoes from './pages/Configuracoes'
 import Login from './pages/Login'
 import NotFound from './pages/NotFound'
@@ -42,6 +43,7 @@ const App = () => (
             {/* Redirecionamentos para compatibilidade com links antigos */}
             <Route path="/vendas" element={<Navigate to="/vendas-precificacao" replace />} />
             <Route path="/precificacao" element={<Navigate to="/vendas-precificacao" replace />} />
+            <Route path="/cadastros" element={<Cadastros />} />
             <Route path="/configuracoes" element={<Configuracoes />} />
           </Route>
 

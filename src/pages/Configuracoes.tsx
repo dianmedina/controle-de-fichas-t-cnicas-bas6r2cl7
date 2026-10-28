@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { recipesService } from '@/services/recipes'
 import { Recipe, formatCurrency } from '@/types/restaurant'
 import { Button } from '@/components/ui/button'
@@ -24,9 +25,12 @@ import {
   CookingPot,
   CheckCircle2,
   Info,
+  FolderTree,
+  ArrowRight,
 } from 'lucide-react'
 
 export default function Configuracoes() {
+  const navigate = useNavigate()
   const { toast } = useToast()
   const [recipes, setRecipes] = useState<Recipe[]>([])
   const [loading, setLoading] = useState(true)
@@ -153,6 +157,31 @@ export default function Configuracoes() {
           Salvar Todos os Preços
         </Button>
       </div>
+
+      {/* Bloco 0: Atalho para Cadastros (Tipos de Pratos & Categorias de Insumos) */}
+      <Card className="border-amber-200 bg-gradient-to-r from-amber-50/70 via-white to-orange-50/50 shadow-xs">
+        <CardHeader className="pb-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <CardTitle className="text-base flex items-center gap-2 text-amber-950">
+                <FolderTree className="h-5 w-5 text-amber-600" />
+                Cadastros de Tipos de Pratos & Categorias de Insumos
+              </CardTitle>
+              <CardDescription className="text-slate-600 mt-1">
+                Personalize os tipos de fichas técnicas (pratos, guarnições, sobremesas...) e as
+                categorias dos insumos sem depender de planilhas de importação.
+              </CardDescription>
+            </div>
+            <Button
+              onClick={() => navigate('/cadastros')}
+              className="bg-amber-600 hover:bg-amber-700 text-white shrink-0 gap-1.5"
+            >
+              Gerenciar Cadastros
+              <ArrowRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </CardHeader>
+      </Card>
 
       <div className="p-4 bg-amber-50/70 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-start gap-3">
         <Info className="h-5 w-5 text-amber-700 shrink-0 mt-0.5" />

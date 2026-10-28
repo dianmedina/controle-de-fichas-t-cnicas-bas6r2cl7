@@ -2,7 +2,15 @@ import React, { useEffect, useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { recipesService, RecipeWithCost } from '@/services/recipes'
 import { ingredientsService } from '@/services/ingredients'
-import { Recipe, Ingredient, RecipeType, formatCurrency, formatPercent } from '@/types/restaurant'
+import {
+  Recipe,
+  Ingredient,
+  RecipeType,
+  DishType,
+  formatCurrency,
+  formatPercent,
+} from '@/types/restaurant'
+import { dishTypesService } from '@/services/dishTypes'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -55,6 +63,7 @@ export default function FichasTecnicas() {
   const [recipesWithCost, setRecipesWithCost] = useState<RecipeWithCost[]>([])
   const [rawRecipes, setRawRecipes] = useState<Recipe[]>([])
   const [allIngredients, setAllIngredients] = useState<Ingredient[]>([])
+  const [dishTypes, setDishTypes] = useState<DishType[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [typeFilter, setTypeFilter] = useState<'all' | RecipeType>('all')
@@ -83,14 +92,16 @@ export default function FichasTecnicas() {
   const loadData = async () => {
     try {
       setLoading(true)
-      const [allRecipes, allItems, ings] = await Promise.all([
+      const [allRecipes, allItems, ings, types] = await Promise.all([
         recipesService.getAll(),
         recipesService.getAllRecipeItems(),
         ingredientsService.getAll(),
+        dishTypesService.getAll().catch(() => []),
       ])
 
       setRawRecipes(allRecipes)
       setAllIngredients(ings)
+      setDishTypes(types)
 
       const enriched = allRecipes.map((r) => {
         const items = allItems.filter((i) => i.recipe_id === r.id)
@@ -117,7 +128,11 @@ export default function FichasTecnicas() {
   const filteredRecipes = useMemo(() => {
     return recipesWithCost.filter((item) => {
       const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase())
-      const matchesType = typeFilter === 'all' || item.type === typeFilter
+      const matchesType =
+        typeFilter === 'all' ||
+        item.type === typeFilter ||
+        item.type_id === typeFilter ||
+        item.expand?.type_id?.slug === typeFilter
       return matchesSearch && matchesType
     })
   }, [recipesWithCost, searchTerm, typeFilter])
@@ -167,15 +182,29 @@ export default function FichasTecnicas() {
 
     try {
       setSaving(true)
+      // Encontra ou associa o type_id correspondente
+      let matchedTypeId = dishTypes.find(
+        (t) => t.slug === formData.type || t.id === formData.type || t.name === formData.type,
+      )?.id
+      if (!matchedTypeId && formData.type) {
+        try {
+          const autoType = await dishTypesService.findOrCreate(formData.type)
+          matchedTypeId = autoType.id
+        } catch {
+          /* intentionally ignored */
+        }
+      }
+
       if (editingRecipe) {
         await recipesService.update(editingRecipe.id, {
           name: formData.name.trim(),
           type: formData.type,
+          type_id: matchedTypeId,
           yield_portions: portionsNum,
           selling_price: priceNum,
           labor_cost: laborNum >= 0 ? laborNum : 0,
           notes: formData.notes.trim() || undefined,
-        })
+        } as any)
         toast({ title: 'Ficha técnica atualizada com sucesso!' })
         setIsModalOpen(false)
         loadData()
@@ -183,11 +212,12 @@ export default function FichasTecnicas() {
         const created = await recipesService.create({
           name: formData.name.trim(),
           type: formData.type,
+          type_id: matchedTypeId,
           yield_portions: portionsNum,
           selling_price: priceNum,
           labor_cost: laborNum >= 0 ? laborNum : 0,
           notes: formData.notes.trim() || undefined,
-        })
+        } as any)
         toast({ title: 'Ficha técnica criada! Agora adicione os insumos.' })
         setIsModalOpen(false)
         navigate(`/fichas/${created.id}`)
@@ -327,17 +357,17 @@ export default function FichasTecnicas() {
         </div>
 
         <div className="flex items-center gap-2">
-          <Select
-            value={typeFilter}
-            onValueChange={(val: 'all' | RecipeType) => setTypeFilter(val)}
-          >
-            <SelectTrigger className="w-full sm:w-[180px] text-sm bg-slate-50 border-slate-200">
+          <Select value={typeFilter} onValueChange={(val: 'all' | string) => setTypeFilter(val)}>
+            <SelectTrigger className="w-full sm:w-[200px] text-sm bg-slate-50 border-slate-200">
               <SelectValue placeholder="Tipo de item" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos os tipos</SelectItem>
-              <SelectItem value="prato">Apenas Pratos</SelectItem>
-              <SelectItem value="guarnicao">Apenas Guarnições</SelectItem>
+              {dishTypes.map((dt) => (
+                <SelectItem key={dt.id} value={dt.slug || dt.id}>
+                  {dt.name}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
@@ -416,15 +446,28 @@ export default function FichasTecnicas() {
                     </TableCell>
 
                     <TableCell onClick={(e) => e.stopPropagation()}>
-                      {recipe.type === 'prato' ? (
-                        <Badge className="bg-amber-100 text-amber-900 border-amber-200 font-medium">
-                          Prato
-                        </Badge>
-                      ) : (
-                        <Badge className="bg-orange-100 text-orange-900 border-orange-200 font-medium">
-                          Guarnição
-                        </Badge>
-                      )}
+                      {(() => {
+                        const matched = dishTypes.find(
+                          (t) => t.id === recipe.type_id || t.slug === recipe.type,
+                        )
+                        const label =
+                          matched?.name ||
+                          (recipe.type === 'prato'
+                            ? 'Prato'
+                            : recipe.type === 'guarnicao'
+                              ? 'Guarnição'
+                              : recipe.type)
+                        const isGarnish = matched?.is_garnish || recipe.type === 'guarnicao'
+                        return isGarnish ? (
+                          <Badge className="bg-orange-100 text-orange-900 border-orange-200 font-medium">
+                            {label}
+                          </Badge>
+                        ) : (
+                          <Badge className="bg-amber-100 text-amber-900 border-amber-200 font-medium">
+                            {label}
+                          </Badge>
+                        )
+                      })()}
                     </TableCell>
 
                     <TableCell className="text-center text-slate-600">
@@ -542,17 +585,20 @@ export default function FichasTecnicas() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <Label htmlFor="r-type">Tipo *</Label>
+                  <Label htmlFor="r-type">Tipo de Prato *</Label>
                   <Select
                     value={formData.type}
                     onValueChange={(val: RecipeType) => setFormData({ ...formData, type: val })}
                   >
                     <SelectTrigger id="r-type">
-                      <SelectValue />
+                      <SelectValue placeholder="Selecione o tipo..." />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="prato">Prato Principal</SelectItem>
-                      <SelectItem value="guarnicao">Guarnição / Acompanhamento</SelectItem>
+                      {dishTypes.map((dt) => (
+                        <SelectItem key={dt.id} value={dt.slug || dt.id}>
+                          {dt.name} {dt.is_garnish ? '(Guarnição/Sub-ficha)' : ''}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>

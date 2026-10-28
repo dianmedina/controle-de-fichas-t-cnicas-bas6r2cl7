@@ -7,6 +7,7 @@ import {
   ScrollText,
   DollarSign,
   TrendingUp,
+  FolderTree,
   Settings,
   LogOut,
   UtensilsCrossed,
@@ -28,6 +29,7 @@ export default function Layout() {
     { label: 'Insumos', path: '/insumos', icon: Boxes },
     { label: 'Fichas Técnicas', path: '/fichas', icon: ScrollText },
     { label: 'Vendas & Precificação', path: '/vendas-precificacao', icon: TrendingUp },
+    { label: 'Cadastros', path: '/cadastros', icon: FolderTree },
     { label: 'Configurações', path: '/configuracoes', icon: Settings },
   ]
 

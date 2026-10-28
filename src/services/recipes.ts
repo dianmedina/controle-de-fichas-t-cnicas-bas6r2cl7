@@ -17,11 +17,14 @@ export const recipesService = {
   async getAll(): Promise<Recipe[]> {
     return await pb.collection('recipes').getFullList<Recipe>({
       sort: 'name',
+      expand: 'type_id',
     })
   },
 
   async getById(id: string): Promise<Recipe> {
-    return await pb.collection('recipes').getOne<Recipe>(id)
+    return await pb.collection('recipes').getOne<Recipe>(id, {
+      expand: 'type_id',
+    })
   },
 
   async getItemsByRecipeId(recipeId: string): Promise<RecipeItem[]> {

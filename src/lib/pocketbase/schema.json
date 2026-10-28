@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-28T01:01:03.958Z",
+  "generatedAt": "2026-10-28T01:19:32.982Z",
   "collections": [
     {
       "name": "users",
@@ -124,11 +124,19 @@
           "required": false,
           "system": false,
           "selectValues": ["kg", "g", "L", "mL", "unidade"]
+        },
+        {
+          "name": "category_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "ingredient_categories"
         }
       ],
       "indexes": [
         "CREATE INDEX idx_ingredients_name ON ingredients (name)",
-        "CREATE INDEX idx_ingredients_category ON ingredients (category)"
+        "CREATE INDEX idx_ingredients_category ON ingredients (category)",
+        "CREATE INDEX `idx_ingredients_category_id` ON `ingredients` (category_id)"
       ]
     },
     {
@@ -200,28 +208,23 @@
           "system": false
         },
         {
-          "name": "reduction_percent",
-          "type": "number",
+          "name": "photo_2",
+          "type": "file",
           "required": false,
           "system": false
         },
         {
-          "name": "package_size",
-          "type": "number",
-          "required": false,
-          "system": false
-        },
-        {
-          "name": "package_unit",
-          "type": "select",
+          "name": "type_id",
+          "type": "relation",
           "required": false,
           "system": false,
-          "selectValues": ["kg", "g", "L", "mL", "unidade"]
+          "collectionRef": "recipe_types"
         }
       ],
       "indexes": [
         "CREATE INDEX idx_recipes_name ON recipes (name)",
-        "CREATE INDEX idx_recipes_type ON recipes (type)"
+        "CREATE INDEX idx_recipes_type ON recipes (type)",
+        "CREATE INDEX `idx_recipes_type_id` ON `recipes` (type_id)"
       ]
     },
     {
@@ -394,6 +397,136 @@
       "indexes": [
         "CREATE INDEX idx_price_history_ingredient ON ingredient_price_history (ingredient_id)",
         "CREATE INDEX idx_price_history_date ON ingredient_price_history (date)"
+      ]
+    },
+    {
+      "name": "recipe_types",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "name",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "slug",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "color",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "sort_order",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "is_garnish",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX idx_recipe_types_slug ON recipe_types (slug)",
+        "CREATE INDEX idx_recipe_types_name ON recipe_types (name)",
+        "CREATE INDEX idx_recipe_types_order ON recipe_types (sort_order)"
+      ]
+    },
+    {
+      "name": "ingredient_categories",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "name",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "slug",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "color",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "sort_order",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX idx_ingredient_categories_slug ON ingredient_categories (slug)",
+        "CREATE INDEX idx_ingredient_categories_name ON ingredient_categories (name)",
+        "CREATE INDEX idx_ingredient_categories_order ON ingredient_categories (sort_order)"
       ]
     }
   ]

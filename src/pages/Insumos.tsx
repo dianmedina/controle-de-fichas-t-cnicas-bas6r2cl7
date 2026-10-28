@@ -1,15 +1,16 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import { ingredientsService } from '@/services/ingredients'
+import { ingredientCategoriesService } from '@/services/ingredientCategories'
 import {
   Ingredient,
-  IngredientPriceHistory,
+  IngredientCategory,
   MeasurementUnit,
+  IngredientPriceHistory,
   formatCurrency,
-  getEffectiveIngredientPrice,
-  getStandardUnitPrice,
   formatPackageInfo,
-} from '@/types/restaurant'
-import { Button } from '@/components/ui/button'
+  getStandardUnitPrice,
+  getEffectiveIngredientPrice,
+} from '@/types/restaurant'import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -61,6 +62,7 @@ const UNITS: MeasurementUnit[] = ['kg', 'g', 'L', 'mL', 'unidade']
 export default function Insumos() {
   const { toast } = useToast()
   const [ingredients, setIngredients] = useState<Ingredient[]>([])
+  const [availableCategories, setAvailableCategories] = useState<IngredientCategory[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
@@ -125,8 +127,12 @@ export default function Insumos() {
   const loadIngredients = async () => {
     try {
       setLoading(true)
-      const data = await ingredientsService.getAll()
+      const [data, cats] = await Promise.all([
+        ingredientsService.getAll(),
+        ingredientCategoriesService.getAll().catch(() => []),
+      ])
       setIngredients(data)
+      setAvailableCategories(cats)
     } catch (error) {
       console.error('Erro ao carregar insumos:', error)
       toast({
@@ -145,11 +151,15 @@ export default function Insumos() {
 
   const categories = useMemo(() => {
     const set = new Set<string>()
+    availableCategories.forEach((c) => {
+      if (c.name) set.add(c.name)
+    })
     ingredients.forEach((ing) => {
       if (ing.category) set.add(ing.category)
+      if (ing.expand?.category_id?.name) set.add(ing.expand.category_id.name)
     })
     return Array.from(set).sort()
-  }, [ingredients])
+  }, [ingredients, availableCategories])
 
   const filteredIngredients = useMemo(() => {
     return ingredients.filter((ing) => {
@@ -303,6 +313,15 @@ export default function Insumos() {
 
     try {
       setSaving(true)
+      // Garante que a categoria exista na collection ingredient_categories
+      let linkedCategoryId: string | undefined
+      try {
+        const catRecord = await ingredientCategoriesService.findOrCreate(formData.category.trim())
+        linkedCategoryId = catRecord.id
+      } catch (catErr) {
+        console.warn('Erro ao auto-criar/obter categoria:', catErr)
+      }
+
       if (editingIngredient) {
         await ingredientsService.update(editingIngredient.id, {
           name: formData.name.trim(),
@@ -312,9 +331,10 @@ export default function Insumos() {
           package_size: packageSizeVal,
           package_unit: packageUnitVal,
           category: formData.category.trim(),
+          category_id: linkedCategoryId,
           supplier: formData.supplier.trim() || undefined,
           min_stock: minStockNum,
-        })
+        } as any)
         toast({ title: 'Insumo atualizado com sucesso!' })
       } else {
         await ingredientsService.create({
@@ -325,9 +345,10 @@ export default function Insumos() {
           package_size: packageSizeVal,
           package_unit: packageUnitVal,
           category: formData.category.trim(),
+          category_id: linkedCategoryId,
           supplier: formData.supplier.trim() || undefined,
           min_stock: minStockNum,
-        })
+        } as any)
         toast({ title: 'Insumo cadastrado com sucesso!' })
       }
       setIsModalOpen(false)
@@ -889,14 +910,25 @@ export default function Insumos() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <Label htmlFor="category">Categoria *</Label>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="category">Categoria *</Label>
+                    <span className="text-[11px] text-slate-400">
+                      Escolha ou digite uma nova
+                    </span>
+                  </div>
                   <Input
                     id="category"
-                    placeholder="Ex: Carnes, Laticínios..."
+                    list="categories-datalist"
+                    placeholder="Ex: Carnes, Hortifruti..."
                     value={formData.category}
                     onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                     required
                   />
+                  <datalist id="categories-datalist">
+                    {categories.map((c) => (
+                      <option key={c} value={c} />
+                    ))}
+                  </datalist>
                 </div>
 
                 <div className="space-y-1.5">

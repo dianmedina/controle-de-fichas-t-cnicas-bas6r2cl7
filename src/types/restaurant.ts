@@ -10,12 +10,36 @@ export interface IngredientPriceHistory {
   updated?: string
 }
 
+export interface IngredientCategory {
+  id: string
+  name: string
+  slug: string
+  description?: string
+  color?: string
+  sort_order?: number
+  created?: string
+  updated?: string
+}
+
+export interface DishType {
+  id: string
+  name: string
+  slug: string
+  description?: string
+  color?: string
+  sort_order?: number
+  is_garnish?: boolean
+  created?: string
+  updated?: string
+}
+
 export interface Ingredient {
   id: string
   name: string
   price: number
   unit: MeasurementUnit
   category: string
+  category_id?: string
   supplier?: string
   min_stock?: number
   reduction_percent?: number
@@ -23,6 +47,9 @@ export interface Ingredient {
   package_unit?: MeasurementUnit
   created?: string
   updated?: string
+  expand?: {
+    category_id?: IngredientCategory
+  }
 }
 
 /**
@@ -133,12 +160,13 @@ export function formatPackageInfo(
   return `${sizeFormatted} ${packageUnit}`
 }
 
-export type RecipeType = 'prato' | 'guarnicao'
+export type RecipeType = 'prato' | 'guarnicao' | string
 
 export interface Recipe {
   id: string
   name: string
   type: RecipeType
+  type_id?: string
   yield_portions: number
   selling_price: number
   labor_cost?: number
@@ -147,6 +175,9 @@ export interface Recipe {
   photo_2?: string
   created?: string
   updated?: string
+  expand?: {
+    type_id?: DishType
+  }
 }
 
 export type RecipeItemType = 'ingredient' | 'sub_recipe'
